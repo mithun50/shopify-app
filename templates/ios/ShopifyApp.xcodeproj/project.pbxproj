@@ -12,6 +12,7 @@
 		A1000003 /* WebViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000003; };
 		A1000004 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000004; };
 		A1000005 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = A2000005; };
+		A1000006 /* NotificationHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000007; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -21,6 +22,7 @@
 		A2000004 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A2000005 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		A2000006 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A2000007 /* NotificationHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationHelper.swift; sourceTree = "<group>"; };
 		A3000001 /* ShopifyApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ShopifyApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -49,6 +51,7 @@
 				A2000001 /* AppDelegate.swift */,
 				A2000002 /* SceneDelegate.swift */,
 				A2000003 /* WebViewController.swift */,
+				A2000007 /* NotificationHelper.swift */,
 				A2000004 /* Assets.xcassets */,
 				A2000005 /* LaunchScreen.storyboard */,
 				A2000006 /* Info.plist */,
@@ -137,6 +140,7 @@
 				A1000001 /* AppDelegate.swift in Sources */,
 				A1000002 /* SceneDelegate.swift in Sources */,
 				A1000003 /* WebViewController.swift in Sources */,
+				A1000006 /* NotificationHelper.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

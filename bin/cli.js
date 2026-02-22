@@ -6,7 +6,7 @@ const inquirer = require('inquirer');
 const path = require('path');
 const fs = require('fs-extra');
 const { generateProject } = require('../src/index');
-const { loadConfig, saveConfig, validateShopifyUrl } = require('../src/config');
+const { loadConfig, saveConfig, validateShopifyUrl, getGithubToken, saveGithubToken } = require('../src/config');
 
 const program = new Command();
 
@@ -23,6 +23,7 @@ program
   .option('-p, --package <package>', 'Package name (e.g., com.mystore.app)')
   .option('-c, --color <color>', 'Primary theme color (hex)')
   .option('-l, --logo <path>', 'Path to splash screen logo image')
+  .option('--fcm <path>', 'Path to google-services.json for Firebase Cloud Messaging')
   .action(async (options) => {
     console.log(chalk.bold.cyan('\n  Shopify2App - Store to Mobile App Converter\n'));
 
@@ -88,13 +89,27 @@ program
       logoPath = null;
     }
 
+    // Resolve FCM config path
+    let fcmEnabled = false;
+    let fcmConfigPath = null;
+    if (options.fcm) {
+      fcmConfigPath = path.resolve(options.fcm.trim());
+      if (!await fs.pathExists(fcmConfigPath)) {
+        console.log(chalk.red(`\n  Error: FCM config file not found: ${fcmConfigPath}\n`));
+        process.exit(1);
+      }
+      fcmEnabled = true;
+    }
+
     const config = {
       storeUrl: options.url || answers.storeUrl,
       appName: options.name || answers.appName,
       packageName: options.package || answers.packageName || `com.${(options.name || answers.appName).toLowerCase().replace(/[^a-z0-9]/g, '')}.app`,
       themeColor: options.color || answers.themeColor || '#000000',
       iconPath: null,
-      logoPath: logoPath
+      logoPath: logoPath,
+      fcmEnabled: fcmEnabled,
+      fcmConfigPath: fcmConfigPath
     };
 
     if (!validateShopifyUrl(config.storeUrl)) {
@@ -107,22 +122,28 @@ program
     console.log(chalk.gray(`  App Name:     ${config.appName}`));
     console.log(chalk.gray(`  Package:      ${config.packageName}`));
     console.log(chalk.gray(`  Theme Color:  ${config.themeColor}`));
-    console.log(chalk.gray(`  Splash Logo:  ${config.logoPath || 'none'}\n`));
+    console.log(chalk.gray(`  Splash Logo:  ${config.logoPath || 'none'}`));
+    console.log(chalk.gray(`  FCM:          ${config.fcmEnabled ? 'enabled' : 'disabled (local notifications only)'}\n`));
 
     try {
       saveConfig(config);
       await generateProject(config);
       console.log(chalk.green.bold('\n  Project generated successfully!\n'));
       console.log(chalk.white('  Next steps:'));
+      console.log(chalk.gray('  1. shopify2app build                - Build APK/IPA in the cloud'));
+      console.log(chalk.gray('  2. Add signing secrets for release builds (see README)'));
+      console.log(chalk.gray(''));
+      console.log(chalk.white('  Or manually:'));
       console.log(chalk.gray('  1. git init && git add -A && git commit -m "Initial commit"'));
       console.log(chalk.gray('  2. Create a GitHub repo and push'));
       console.log(chalk.gray('  3. Add signing secrets to GitHub repo settings'));
       console.log(chalk.gray('  4. GitHub Actions will build APK + AAB + IPA automatically'));
       console.log(chalk.gray(''));
       console.log(chalk.white('  Customize your app:'));
-      console.log(chalk.gray('  shopify2app icon <path>    - Set custom app icon'));
-      console.log(chalk.gray('  shopify2app splash <path>  - Set custom splash logo'));
-      console.log(chalk.gray('  shopify2app config         - View/update configuration\n'));
+      console.log(chalk.gray('  shopify2app icon <path>           - Set custom app icon'));
+      console.log(chalk.gray('  shopify2app splash <path>         - Set custom splash logo'));
+      console.log(chalk.gray('  shopify2app notifications --fcm   - Enable push notifications'));
+      console.log(chalk.gray('  shopify2app config                - View/update configuration\n'));
     } catch (err) {
       console.log(chalk.red(`\n  Error: ${err.message}\n`));
       process.exit(1);
@@ -166,7 +187,9 @@ program
     console.log(chalk.white(`  Package:      ${config.packageName}`));
     console.log(chalk.white(`  Theme Color:  ${config.themeColor}`));
     console.log(chalk.white(`  Icon:         ${config.iconPath || 'default'}`));
-    console.log(chalk.white(`  Splash Logo:  ${config.logoPath || 'none'}\n`));
+    console.log(chalk.white(`  Splash Logo:  ${config.logoPath || 'none'}`));
+    console.log(chalk.white(`  FCM:          ${config.fcmEnabled ? 'enabled' : 'disabled'}`));
+    console.log(chalk.white(`  Notifications: local${config.fcmEnabled ? ' + push (FCM)' : ' only'}\n`));
   });
 
 program
@@ -253,6 +276,107 @@ program
 
     console.log(chalk.green('\n  Splash logo updated successfully!\n'));
     console.log(chalk.gray('  Tip: For best results, use a transparent PNG (e.g., 512x512).\n'));
+  });
+
+program
+  .command('notifications')
+  .description('Configure push notifications')
+  .option('--fcm <path>', 'Enable FCM with google-services.json path')
+  .option('--disable', 'Disable FCM push notifications (local notifications remain)')
+  .action(async (options) => {
+    const config = loadConfig();
+    if (!config) {
+      console.log(chalk.red('\n  No config found. Run "shopify2app init" first.\n'));
+      process.exit(1);
+    }
+
+    if (options.disable) {
+      config.fcmEnabled = false;
+      config.fcmConfigPath = null;
+      saveConfig(config);
+      console.log(chalk.green('\n  FCM push notifications disabled. Local notifications still active.'));
+      console.log(chalk.gray('  Run "shopify2app init" to regenerate the project.\n'));
+      return;
+    }
+
+    if (options.fcm) {
+      const fcmPath = path.resolve(options.fcm.trim());
+      if (!await fs.pathExists(fcmPath)) {
+        console.log(chalk.red(`\n  Error: File not found: ${fcmPath}\n`));
+        process.exit(1);
+      }
+      config.fcmEnabled = true;
+      config.fcmConfigPath = fcmPath;
+      saveConfig(config);
+
+      // Copy google-services.json to output if it exists
+      const outputGS = path.join(process.cwd(), 'output', 'android', 'app', 'google-services.json');
+      await fs.ensureDir(path.dirname(outputGS));
+      await fs.copy(fcmPath, outputGS);
+
+      console.log(chalk.green('\n  FCM push notifications enabled!'));
+      console.log(chalk.gray(`  google-services.json: ${fcmPath}`));
+      console.log(chalk.gray('  Run "shopify2app init" to regenerate the project with FCM support.\n'));
+      return;
+    }
+
+    // Show current status
+    console.log(chalk.cyan('\n  Notification Configuration:'));
+    console.log(chalk.white(`  Local Notifications: enabled (always)`));
+    console.log(chalk.white(`  FCM Push:            ${config.fcmEnabled ? 'enabled' : 'disabled'}`));
+    if (config.fcmConfigPath) {
+      console.log(chalk.white(`  google-services.json: ${config.fcmConfigPath}`));
+    }
+    console.log(chalk.gray('\n  Options:'));
+    console.log(chalk.gray('  --fcm <path>   Enable FCM with google-services.json'));
+    console.log(chalk.gray('  --disable      Disable FCM push notifications\n'));
+  });
+
+program
+  .command('build')
+  .description('Build APK/IPA in the cloud via GitHub Actions')
+  .option('-t, --token <token>', 'GitHub personal access token')
+  .option('-r, --repo <name>', 'GitHub repository name (default: app name)')
+  .option('-o, --output <path>', 'Output directory for build artifacts', './builds')
+  .option('--public', 'Create a public repository instead of private')
+  .action(async (options) => {
+    // Token resolution chain: flag → env → config → interactive prompt
+    let token = options.token || process.env.GITHUB_TOKEN || getGithubToken();
+
+    if (!token) {
+      const answers = await inquirer.prompt([
+        {
+          type: 'password',
+          name: 'token',
+          message: 'Enter your GitHub personal access token:',
+          mask: '*',
+          validate: (input) => input.trim() ? true : 'Token is required',
+        }
+      ]);
+      token = answers.token.trim();
+
+      // Ask to save token
+      const { save } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'save',
+          message: 'Save token to config for future builds?',
+          default: false,
+        }
+      ]);
+      if (save) {
+        saveGithubToken(token);
+        console.log(chalk.gray('  Token saved to app.config.json'));
+      }
+    }
+
+    const { runBuild } = require('../src/build');
+    await runBuild({
+      token: token,
+      repo: options.repo || null,
+      output: options.output,
+      isPublic: options.public || false,
+    });
   });
 
 program.parse();

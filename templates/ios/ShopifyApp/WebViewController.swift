@@ -18,6 +18,23 @@ class WebViewController: UIViewController {
         setupRefreshControl()
         setupOfflineView()
         loadStore()
+
+        // Schedule welcome-back local notification (24h)
+        NotificationHelper.shared.scheduleWelcomeBackReminder()
+
+        // Observe notification taps to navigate WebView
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleNotificationTap(_:)),
+            name: .notificationTapped,
+            object: nil
+        )
+    }
+
+    @objc private func handleNotificationTap(_ notification: Notification) {
+        guard let urlString = notification.userInfo?["url"] as? String,
+              let url = URL(string: urlString) else { return }
+        webView.load(URLRequest(url: url))
     }
 
     private func setupWebView() {
@@ -153,6 +170,7 @@ class WebViewController: UIViewController {
 
     deinit {
         progressObservation = nil
+        NotificationCenter.default.removeObserver(self, name: .notificationTapped, object: nil)
     }
 }
 

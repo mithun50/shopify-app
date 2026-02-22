@@ -24,6 +24,7 @@ async function generateIosProject(config, outputDir) {
     'ShopifyApp/AppDelegate.swift',
     'ShopifyApp/SceneDelegate.swift',
     'ShopifyApp/WebViewController.swift',
+    'ShopifyApp/NotificationHelper.swift',
     'ShopifyApp/Info.plist',
     'ShopifyApp/LaunchScreen.storyboard',
     'ShopifyApp/Assets.xcassets/Contents.json',

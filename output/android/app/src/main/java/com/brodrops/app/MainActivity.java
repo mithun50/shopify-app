@@ -7,6 +7,7 @@ import android.graphics.Bitmap;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.View;
@@ -34,6 +35,11 @@ public class MainActivity extends AppCompatActivity {
     private SwipeRefreshLayout swipeRefresh;
     private View offlineView;
     private ValueCallback<Uri[]> fileUploadCallback;
+
+    private final ActivityResultLauncher<String> notificationPermissionLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
+                // Permission result received; notifications will work if granted
+            });
 
     private final ActivityResultLauncher<Intent> fileChooserLauncher =
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
@@ -64,6 +70,7 @@ public class MainActivity extends AppCompatActivity {
 
         setupWebView();
         setupSwipeRefresh();
+        setupNotifications();
 
         if (isNetworkAvailable()) {
             webView.loadUrl(STORE_URL);
@@ -71,8 +78,26 @@ public class MainActivity extends AppCompatActivity {
             showOfflineView();
         }
 
-        // Handle deep links
+        // Handle deep links or notification URLs
         handleIntent(getIntent());
+    }
+
+    private void setupNotifications() {
+        NotificationHelper.createNotificationChannel(this);
+
+        // Request POST_NOTIFICATIONS permission on Android 13+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (!NotificationHelper.hasNotificationPermission(this)) {
+                notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS);
+            }
+        }
+
+        // Schedule "Welcome back" local notification for 24 hours from now
+        long triggerAt = System.currentTimeMillis() + (24 * 60 * 60 * 1000);
+        NotificationHelper.scheduleLocalNotification(this,
+                getString(R.string.app_name),
+                "Welcome back! Check out new arrivals and deals.",
+                triggerAt, 1001);
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -204,6 +229,16 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void handleIntent(Intent intent) {
+        if (intent == null) return;
+
+        // Handle notification tap with URL
+        String notificationUrl = intent.getStringExtra("notification_url");
+        if (notificationUrl != null && !notificationUrl.isEmpty()) {
+            webView.loadUrl(notificationUrl);
+            return;
+        }
+
+        // Handle deep links
         if (Intent.ACTION_VIEW.equals(intent.getAction())) {
             Uri data = intent.getData();
             if (data != null) {

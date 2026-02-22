@@ -9,13 +9,36 @@ function replacePlaceholders(content, config) {
   const storeHost = new URL(config.storeUrl).hostname;
   const packagePath = config.packageName.replace(/\./g, '/');
 
+  // FCM conditional replacements
+  const fcmEnabled = config.fcmEnabled || false;
+  const fcmPlugin = fcmEnabled ? "id 'com.google.gms.google-services'" : '';
+  const fcmDependencies = fcmEnabled
+    ? "implementation platform('com.google.firebase:firebase-bom:32.7.0')\n    implementation 'com.google.firebase:firebase-messaging'"
+    : '';
+  const fcmClasspath = fcmEnabled
+    ? "id 'com.google.gms.google-services' version '4.4.0' apply false"
+    : '';
+  const fcmServiceDeclaration = fcmEnabled
+    ? `<service
+            android:name=".ShopifyFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>`
+    : '';
+
   return content
     .replace(/\{\{APP_NAME\}\}/g, config.appName)
     .replace(/\{\{STORE_URL\}\}/g, config.storeUrl)
     .replace(/\{\{STORE_HOST\}\}/g, storeHost)
     .replace(/\{\{PACKAGE_NAME\}\}/g, config.packageName)
     .replace(/\{\{PACKAGE_PATH\}\}/g, packagePath)
-    .replace(/\{\{THEME_COLOR\}\}/g, config.themeColor);
+    .replace(/\{\{THEME_COLOR\}\}/g, config.themeColor)
+    .replace(/\{\{FCM_PLUGIN\}\}/g, fcmPlugin)
+    .replace(/\{\{FCM_DEPENDENCIES\}\}/g, fcmDependencies)
+    .replace(/\{\{FCM_CLASSPATH\}\}/g, fcmClasspath)
+    .replace(/\{\{FCM_SERVICE_DECLARATION\}\}/g, fcmServiceDeclaration);
 }
 
 async function generateAndroidProject(config, outputDir) {
@@ -27,6 +50,8 @@ async function generateAndroidProject(config, outputDir) {
     'app/src/main/AndroidManifest.xml',
     'app/src/main/java/com/shopifyapp/MainActivity.java',
     'app/src/main/java/com/shopifyapp/SplashActivity.java',
+    'app/src/main/java/com/shopifyapp/NotificationHelper.java',
+    'app/src/main/java/com/shopifyapp/NotificationReceiver.java',
     'app/src/main/res/layout/activity_main.xml',
     'app/src/main/res/layout/activity_splash.xml',
     'app/src/main/res/values/strings.xml',
@@ -40,6 +65,11 @@ async function generateAndroidProject(config, outputDir) {
     'gradle/wrapper/gradle-wrapper.properties',
     'app/proguard-rules.pro',
   ];
+
+  // Conditionally include FCM service when enabled
+  if (config.fcmEnabled) {
+    filesToProcess.push('app/src/main/java/com/shopifyapp/ShopifyFirebaseMessagingService.java');
+  }
 
   for (const file of filesToProcess) {
     const srcPath = path.join(TEMPLATE_DIR, file);
@@ -85,6 +115,14 @@ async function generateAndroidProject(config, outputDir) {
   } else {
     // Generate default shopping bag logo from SVG → PNG
     await fs.writeFile(path.join(drawableDir, 'splash_logo.png'), createDefaultLogoPNG(512));
+  }
+
+  // Copy google-services.json if FCM is enabled
+  if (config.fcmEnabled && config.fcmConfigPath) {
+    const fcmSrc = path.resolve(config.fcmConfigPath);
+    if (await fs.pathExists(fcmSrc)) {
+      await fs.copy(fcmSrc, path.join(androidDir, 'app', 'google-services.json'));
+    }
   }
 }
 

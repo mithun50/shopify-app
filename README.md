@@ -9,6 +9,7 @@ Convert your Shopify store into a native mobile app (Android APK/AAB + iOS IPA) 
 - **Deep linking** — `https://yourstore.com` URLs open in-app
 - **Pull-to-refresh**, progress bar, offline detection with retry
 - **File upload** support (camera + gallery on Android, document picker on iOS)
+- **Notifications** — local reminders + optional FCM push notifications (Android) and APNs (iOS)
 - **GitHub Actions CI/CD** — builds are automated on every push
 - **Build outputs**: Debug APK, signed Release APK, Release AAB (Play Store), iOS archive
 
@@ -54,6 +55,7 @@ Initialize a new mobile app project.
 | `-p, --package <id>` | Package name (e.g., `com.mystore.app`) |
 | `-c, --color <hex>` | Theme color (e.g., `#FF5733`) |
 | `-l, --logo <path>` | Splash screen logo image |
+| `--fcm <path>` | Path to `google-services.json` for Firebase push notifications |
 
 ### `shopify2app icon <path>`
 
@@ -86,6 +88,132 @@ shopify2app config
 # Update values
 shopify2app config --url https://newstore.com --color "#000000"
 ```
+
+### `shopify2app build`
+
+Build your app in the cloud using GitHub Actions. This command automates the entire flow: creates a private GitHub repo, pushes your generated project, waits for CI builds to complete, and downloads the build artifacts locally.
+
+```bash
+# Interactive (prompts for GitHub token)
+shopify2app build
+
+# With token flag
+shopify2app build --token ghp_xxxxxxxxxxxx
+
+# Custom repo name and output directory
+shopify2app build --token ghp_xxx --repo my-app --output ./my-builds
+
+# Create a public repo instead of private
+shopify2app build --token ghp_xxx --public
+```
+
+| Option | Description |
+|--------|-------------|
+| `-t, --token <token>` | GitHub personal access token (or set `GITHUB_TOKEN` env var) |
+| `-r, --repo <name>` | Repository name (defaults to app name) |
+| `-o, --output <path>` | Artifact download directory (default: `./builds/`) |
+| `--public` | Create a public repository (default: private) |
+
+**Token resolution order:** `--token` flag → `GITHUB_TOKEN` env variable → saved config → interactive prompt.
+
+**What it does:**
+1. Validates your project (output/ directory must exist)
+2. Authenticates with GitHub using your token
+3. Creates a private repo (or reuses an existing one)
+4. Pushes the generated code with workflows at repo root
+5. Polls GitHub Actions every 15s until builds complete (30 min timeout)
+6. Downloads build artifacts to your output directory
+
+**Build artifacts:**
+
+| Artifact | File | Description |
+|----------|------|-------------|
+| Debug APK | `AppName-debug.apk` | Unsigned debug build |
+| Release APK | `AppName-release.apk` | Signed release (if secrets configured) |
+| Release AAB | `AppName-release.aab` | Play Store bundle (if secrets configured) |
+| iOS Archive | `AppName-ios.xcarchive.zip` | Xcode archive (if iOS workflow succeeds) |
+
+**Creating a GitHub Token:**
+1. Go to [GitHub Settings → Developer Settings → Personal Access Tokens → Fine-grained tokens](https://github.com/settings/tokens?type=beta)
+2. Create a new token with **Repository** permissions: `Read and write` access to `Contents`, `Actions`, and `Administration`
+3. Or use a classic token with `repo` and `workflow` scopes
+
+### `shopify2app notifications`
+
+Configure push notifications.
+
+```bash
+# View notification status
+shopify2app notifications
+
+# Enable FCM push notifications
+shopify2app notifications --fcm ./google-services.json
+
+# Disable FCM (local notifications remain active)
+shopify2app notifications --disable
+```
+
+| Option | Description |
+|--------|-------------|
+| `--fcm <path>` | Enable FCM with `google-services.json` |
+| `--disable` | Disable FCM push notifications |
+
+## Notifications
+
+The generated app includes both **local notifications** and optional **push notifications**.
+
+### Local Notifications (Always Active)
+
+A "Welcome back" reminder is automatically scheduled 24 hours after the user opens the app. This works on both Android and iOS without any server setup.
+
+### Push Notifications (Optional FCM)
+
+To enable server-driven push notifications on Android:
+
+1. Create a [Firebase project](https://console.firebase.google.com/)
+2. Add an Android app with your package name
+3. Download `google-services.json`
+4. Run:
+
+```bash
+shopify2app init --url https://mystore.com --name "My Store" --fcm ./google-services.json
+```
+
+Or enable FCM on an existing project:
+
+```bash
+shopify2app notifications --fcm ./google-services.json
+shopify2app init  # regenerate project
+```
+
+When FCM is **not** configured:
+- No Firebase dependencies are added to the build
+- No FCM service is included in the manifest
+- Local notifications still work
+
+When FCM is **enabled**:
+- Firebase BOM + Messaging are added to `build.gradle`
+- `google-services.json` is copied to `app/`
+- `ShopifyFirebaseMessagingService` handles incoming push messages
+- Notification taps open the app (optionally navigating to a URL via `url` data payload)
+
+### iOS Push Notifications
+
+iOS uses native APNs (no Firebase SDK required). The app registers for remote notifications at launch. To send push notifications:
+
+1. Enable Push Notifications capability in your Apple Developer account
+2. Generate an APNs key or certificate
+3. Use your backend or a service to send notifications via APNs
+
+### Testing Notifications
+
+**Android (local):** Install the debug APK, open the app, then wait 24h (or adjust the delay in `MainActivity.java` for testing).
+
+**Android (FCM):** Use the [Firebase Console](https://console.firebase.google.com/) > Cloud Messaging > Send test message.
+
+**iOS (local):** Run on a device, open the app, notification fires after 24h.
+
+**iOS (remote):** Requires a physical device and APNs configuration.
 
 ## GitHub Actions Setup
 
@@ -181,11 +309,11 @@ output/
   .gitignore
   android/               # Complete Android project (Java + Gradle)
     app/src/main/
-      java/.../           # MainActivity, SplashActivity
+      java/.../           # MainActivity, SplashActivity, NotificationHelper, NotificationReceiver
       res/                # Layouts, icons, splash logo, themes
     build.gradle
   ios/                    # Complete iOS project (Swift + Xcode)
-    ShopifyApp/           # AppDelegate, WebViewController, assets
+    ShopifyApp/           # AppDelegate, WebViewController, NotificationHelper, assets
     ShopifyApp.xcodeproj/
 ```
 

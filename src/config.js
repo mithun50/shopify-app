@@ -35,4 +35,15 @@ function normalizeUrl(url) {
   return url.replace(/\/+$/, '');
 }
 
-module.exports = { loadConfig, saveConfig, validateShopifyUrl, normalizeUrl };
+function getGithubToken() {
+  const config = loadConfig();
+  return (config && config.githubToken) ? config.githubToken : null;
+}
+
+function saveGithubToken(token) {
+  let config = loadConfig() || {};
+  config.githubToken = token;
+  saveConfig(config);
+}
+
+module.exports = { loadConfig, saveConfig, validateShopifyUrl, normalizeUrl, getGithubToken, saveGithubToken };
