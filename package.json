@@ -1,0 +1,31 @@
+{
+  "name": "shopify2app",
+  "version": "1.0.0",
+  "description": "Convert your Shopify store into a native mobile app (Android APK + iOS IPA)",
+  "main": "src/index.js",
+  "bin": {
+    "shopify2app": "./bin/cli.js"
+  },
+  "scripts": {
+    "start": "node bin/cli.js",
+    "test": "node bin/cli.js init --url https://demo.myshopify.com --name \"Test Store\""
+  },
+  "keywords": [
+    "shopify",
+    "mobile-app",
+    "android",
+    "ios",
+    "webview",
+    "apk",
+    "ipa"
+  ],
+  "author": "Mithun Gowda B <mithungowda.b7411@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.1.0",
+    "chalk": "^4.1.2",
+    "inquirer": "^8.2.6",
+    "fs-extra": "^11.2.0",
+    "sharp": "^0.33.2"
+  }
+}

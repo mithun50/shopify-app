@@ -1,0 +1,53 @@
+name: Build iOS App
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  release:
+    types: [created]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: ./output/ios
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Build Archive
+        run: |
+          xcodebuild -project ShopifyApp.xcodeproj \
+            -scheme ShopifyApp \
+            -sdk iphoneos \
+            -configuration Release \
+            -archivePath $RUNNER_TEMP/ShopifyApp.xcarchive \
+            archive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Zip Archive
+        run: |
+          cd $RUNNER_TEMP
+          zip -r ShopifyApp-unsigned.zip ShopifyApp.xcarchive
+
+      - name: Upload Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build
+          path: ${{ runner.temp }}/ShopifyApp-unsigned.zip
+
+      - name: Upload to Release
+        if: ${{ github.event_name == 'release' }}
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ runner.temp }}/ShopifyApp-unsigned.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
