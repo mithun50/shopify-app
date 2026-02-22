@@ -1,5 +1,6 @@
 const fs = require('fs-extra');
 const path = require('path');
+const { createSolidPNG, hexToRgb } = require('../png');
 
 const TEMPLATE_DIR = path.join(__dirname, '..', '..', 'templates', 'android');
 
@@ -59,17 +60,20 @@ async function generateAndroidProject(config, outputDir) {
     await fs.writeFile(destPath, content, 'utf-8');
   }
 
-  // Create a placeholder icon if none exists
-  const iconDir = path.join(androidDir, 'app', 'src', 'main', 'res', 'mipmap-xxxhdpi');
-  await fs.ensureDir(iconDir);
-  const iconPath = path.join(iconDir, 'ic_launcher.png');
-  if (!await fs.pathExists(iconPath)) {
-    // Create a simple 1x1 pixel placeholder PNG
-    const placeholderPng = Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-      'base64'
-    );
-    await fs.writeFile(iconPath, placeholderPng);
+  // Create placeholder icons at all densities
+  const { r, g, b } = hexToRgb(config.themeColor);
+  const sizes = [
+    { dir: 'mipmap-mdpi', size: 48 },
+    { dir: 'mipmap-hdpi', size: 72 },
+    { dir: 'mipmap-xhdpi', size: 96 },
+    { dir: 'mipmap-xxhdpi', size: 144 },
+    { dir: 'mipmap-xxxhdpi', size: 192 },
+  ];
+  for (const { dir, size } of sizes) {
+    const iconDir = path.join(androidDir, 'app', 'src', 'main', 'res', dir);
+    await fs.ensureDir(iconDir);
+    const iconPath = path.join(iconDir, 'ic_launcher.png');
+    await fs.writeFile(iconPath, createSolidPNG(size, size, r, g, b));
   }
 }
 

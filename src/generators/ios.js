@@ -1,5 +1,6 @@
 const fs = require('fs-extra');
 const path = require('path');
+const { createSolidPNG, hexToRgb } = require('../png');
 
 const TEMPLATE_DIR = path.join(__dirname, '..', '..', 'templates', 'ios');
 
@@ -42,17 +43,11 @@ async function generateIosProject(config, outputDir) {
     await fs.writeFile(destPath, content, 'utf-8');
   }
 
-  // Create a placeholder icon
+  // Create 1024x1024 placeholder icon
+  const { r, g, b } = hexToRgb(config.themeColor);
   const iconDir = path.join(iosDir, 'ShopifyApp', 'Assets.xcassets', 'AppIcon.appiconset');
   await fs.ensureDir(iconDir);
-  const iconPath = path.join(iconDir, 'icon-1024.png');
-  if (!await fs.pathExists(iconPath)) {
-    const placeholderPng = Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-      'base64'
-    );
-    await fs.writeFile(iconPath, placeholderPng);
-  }
+  await fs.writeFile(path.join(iconDir, 'icon-1024.png'), createSolidPNG(1024, 1024, r, g, b));
 }
 
 module.exports = { generateIosProject };
