@@ -22,6 +22,34 @@ async function generateProject(config) {
   console.log(chalk.cyan('  Generating GitHub Actions workflows...'));
   await generateWorkflows(outputDir);
   console.log(chalk.green('  Workflows generated.'));
+
+  // Generate .gitignore for the output directory
+  const fs = require('fs-extra');
+  const gitignoreContent = [
+    '# Build outputs',
+    'android/app/build/',
+    'android/.gradle/',
+    'android/build/',
+    'ios/build/',
+    'ios/DerivedData/',
+    '',
+    '# IDE',
+    '.idea/',
+    '*.iml',
+    '*.xcworkspace/',
+    'xcuserdata/',
+    '*.xcuserdatad/',
+    '',
+    '# OS',
+    '.DS_Store',
+    'Thumbs.db',
+    '',
+    '# Signing',
+    '*.jks',
+    '*.keystore',
+    '',
+  ].join('\n');
+  await fs.writeFile(path.join(outputDir, '.gitignore'), gitignoreContent, 'utf-8');
 }
 
 async function generateWorkflows(outputDir) {

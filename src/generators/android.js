@@ -1,6 +1,7 @@
 const fs = require('fs-extra');
 const path = require('path');
 const { createSolidPNG, hexToRgb } = require('../png');
+const { createDefaultLogoPNG } = require('../logo');
 
 const TEMPLATE_DIR = path.join(__dirname, '..', '..', 'templates', 'android');
 
@@ -74,6 +75,16 @@ async function generateAndroidProject(config, outputDir) {
     await fs.ensureDir(iconDir);
     const iconPath = path.join(iconDir, 'ic_launcher.png');
     await fs.writeFile(iconPath, createSolidPNG(size, size, r, g, b));
+  }
+
+  // Create splash_logo drawable
+  const drawableDir = path.join(androidDir, 'app', 'src', 'main', 'res', 'drawable');
+  await fs.ensureDir(drawableDir);
+  if (config.logoPath && await fs.pathExists(config.logoPath)) {
+    await fs.copy(config.logoPath, path.join(drawableDir, 'splash_logo.png'));
+  } else {
+    // Generate default shopping bag logo from SVG → PNG
+    await fs.writeFile(path.join(drawableDir, 'splash_logo.png'), createDefaultLogoPNG(512));
   }
 }
 

@@ -66,4 +66,39 @@ function hexToRgb(hex) {
   };
 }
 
-module.exports = { createSolidPNG, hexToRgb };
+function createRGBAPNG(width, height, pixels) {
+  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;  // bit depth
+  ihdr[9] = 6;  // RGBA
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
+
+  const rowLen = 1 + width * 4;
+  const raw = Buffer.alloc(rowLen * height);
+  for (let y = 0; y < height; y++) {
+    raw[y * rowLen] = 0; // no filter
+    for (let x = 0; x < width; x++) {
+      const si = (y * width + x) * 4;
+      const di = y * rowLen + 1 + x * 4;
+      raw[di] = pixels[si];
+      raw[di + 1] = pixels[si + 1];
+      raw[di + 2] = pixels[si + 2];
+      raw[di + 3] = pixels[si + 3];
+    }
+  }
+
+  const compressed = zlib.deflateSync(raw);
+  return Buffer.concat([
+    sig,
+    pngChunk('IHDR', ihdr),
+    pngChunk('IDAT', compressed),
+    pngChunk('IEND', Buffer.alloc(0))
+  ]);
+}
+
+module.exports = { createSolidPNG, createRGBAPNG, hexToRgb };

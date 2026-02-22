@@ -1,6 +1,7 @@
 const fs = require('fs-extra');
 const path = require('path');
 const { createSolidPNG, hexToRgb } = require('../png');
+const { createDefaultLogoPNG } = require('../logo');
 
 const TEMPLATE_DIR = path.join(__dirname, '..', '..', 'templates', 'ios');
 
@@ -48,6 +49,33 @@ async function generateIosProject(config, outputDir) {
   const iconDir = path.join(iosDir, 'ShopifyApp', 'Assets.xcassets', 'AppIcon.appiconset');
   await fs.ensureDir(iconDir);
   await fs.writeFile(path.join(iconDir, 'icon-1024.png'), createSolidPNG(1024, 1024, r, g, b));
+
+  // Create SplashLogo imageset
+  const splashDir = path.join(iosDir, 'ShopifyApp', 'Assets.xcassets', 'SplashLogo.imageset');
+  await fs.ensureDir(splashDir);
+
+  if (config.logoPath && await fs.pathExists(config.logoPath)) {
+    await fs.copy(config.logoPath, path.join(splashDir, 'splash_logo.png'));
+    await fs.writeJson(path.join(splashDir, 'Contents.json'), {
+      images: [
+        { idiom: 'universal', filename: 'splash_logo.png', scale: '1x' },
+        { idiom: 'universal', scale: '2x' },
+        { idiom: 'universal', scale: '3x' }
+      ],
+      info: { version: 1, author: 'xcode' }
+    }, { spaces: 2 });
+  } else {
+    // Generate default shopping bag logo from SVG → PNG
+    await fs.writeFile(path.join(splashDir, 'splash_logo.png'), createDefaultLogoPNG(512));
+    await fs.writeJson(path.join(splashDir, 'Contents.json'), {
+      images: [
+        { idiom: 'universal', filename: 'splash_logo.png', scale: '1x' },
+        { idiom: 'universal', scale: '2x' },
+        { idiom: 'universal', scale: '3x' }
+      ],
+      info: { version: 1, author: 'xcode' }
+    }, { spaces: 2 });
+  }
 }
 
 module.exports = { generateIosProject };

@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android
 
 on:
   push:
@@ -59,6 +59,15 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: ./gradlew assembleRelease --no-daemon
 
+      - name: Build Release AAB
+        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_FILE: ${{ env.KEYSTORE_FILE }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew bundleRelease --no-daemon
+
       - name: Upload Release APK
         if: ${{ secrets.KEYSTORE_BASE64 != '' }}
         uses: actions/upload-artifact@v4
@@ -66,10 +75,19 @@ jobs:
           name: app-release
           path: output/android/app/build/outputs/apk/release/app-release.apk
 
+      - name: Upload Release AAB
+        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-bundle
+          path: output/android/app/build/outputs/bundle/release/app-release.aab
+
       - name: Upload to Release
         if: ${{ github.event_name == 'release' && secrets.KEYSTORE_BASE64 != '' }}
         uses: softprops/action-gh-release@v1
         with:
-          files: output/android/app/build/outputs/apk/release/app-release.apk
+          files: |
+            output/android/app/build/outputs/apk/release/app-release.apk
+            output/android/app/build/outputs/bundle/release/app-release.aab
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
