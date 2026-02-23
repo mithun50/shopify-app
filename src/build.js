@@ -14,7 +14,7 @@ const {
   getRunArtifacts,
   downloadArtifact,
 } = require('./github');
-const { loadConfig } = require('./config');
+const { loadConfig, getKeystore } = require('./config');
 
 const POLL_INTERVAL = 15000; // 15 seconds
 const BUILD_TIMEOUT = 30 * 60 * 1000; // 30 minutes
@@ -117,6 +117,19 @@ async function stepPushCode(ctx) {
     const ghDir = path.join(outputDir, '.github');
     if (await fs.pathExists(ghDir)) {
       await fs.copy(ghDir, path.join(stagingDir, '.github'));
+    }
+
+    // Include keystore if configured
+    const keystore = getKeystore();
+    if (keystore && keystore.base64) {
+      const signingDir = path.join(stagingDir, 'signing');
+      await fs.ensureDir(signingDir);
+      await fs.writeFile(path.join(signingDir, 'keystore.jks'), Buffer.from(keystore.base64, 'base64'));
+      await fs.writeFile(path.join(signingDir, 'keystore.password'), keystore.password);
+      await fs.writeFile(path.join(signingDir, 'keystore.alias'), keystore.alias);
+      info('Signing keystore included');
+    } else {
+      info('No keystore configured — auto-generated keystore will be used');
     }
 
     // Git init + commit + push

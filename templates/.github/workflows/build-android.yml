@@ -34,24 +34,34 @@ jobs:
 
       - name: Setup signing
         id: signing
+        working-directory: .
         run: |
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "mode=custom" >> $GITHUB_OUTPUT
-            echo "$KEYSTORE_B64" | base64 -d > keystore.jks
-            echo "KEYSTORE_FILE=$(pwd)/keystore.jks" >> $GITHUB_ENV
+          if [ -f "signing/keystore.jks" ]; then
+            echo "mode=repo" >> $GITHUB_OUTPUT
+            KS_PATH="$(pwd)/signing/keystore.jks"
+            KS_PASS=$(cat signing/keystore.password)
+            KS_ALIAS=$(cat signing/keystore.alias)
+            echo "KEYSTORE_FILE=$KS_PATH" >> $GITHUB_ENV
+            echo "KEYSTORE_PASSWORD=$KS_PASS" >> $GITHUB_ENV
+            echo "KEY_ALIAS=$KS_ALIAS" >> $GITHUB_ENV
+            echo "KEY_PASSWORD=$KS_PASS" >> $GITHUB_ENV
+          elif [ -n "$KEYSTORE_B64" ]; then
+            echo "mode=secrets" >> $GITHUB_OUTPUT
+            echo "$KEYSTORE_B64" | base64 -d > /tmp/keystore.jks
+            echo "KEYSTORE_FILE=/tmp/keystore.jks" >> $GITHUB_ENV
             echo "KEYSTORE_PASSWORD=$KS_PASS" >> $GITHUB_ENV
             echo "KEY_ALIAS=$K_ALIAS" >> $GITHUB_ENV
             echo "KEY_PASSWORD=$K_PASS" >> $GITHUB_ENV
           else
             echo "mode=auto" >> $GITHUB_OUTPUT
             keytool -genkey -v \
-              -keystore keystore.jks \
+              -keystore /tmp/keystore.jks \
               -keyalg RSA -keysize 2048 -validity 10000 \
               -alias release \
               -storepass shopify2app \
               -keypass shopify2app \
               -dname "CN=shopify2app, OU=Mobile, O=App, L=City, ST=State, C=US"
-            echo "KEYSTORE_FILE=$(pwd)/keystore.jks" >> $GITHUB_ENV
+            echo "KEYSTORE_FILE=/tmp/keystore.jks" >> $GITHUB_ENV
             echo "KEYSTORE_PASSWORD=shopify2app" >> $GITHUB_ENV
             echo "KEY_ALIAS=release" >> $GITHUB_ENV
             echo "KEY_PASSWORD=shopify2app" >> $GITHUB_ENV

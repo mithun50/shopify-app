@@ -46,4 +46,15 @@ function saveGithubToken(token) {
   saveConfig(config);
 }
 
-module.exports = { loadConfig, saveConfig, validateShopifyUrl, normalizeUrl, getGithubToken, saveGithubToken };
+function getKeystore() {
+  const config = loadConfig();
+  return (config && config.keystore) ? config.keystore : null;
+}
+
+function saveKeystore(keystoreData) {
+  let config = loadConfig() || {};
+  config.keystore = keystoreData;
+  saveConfig(config);
+}
+
+module.exports = { loadConfig, saveConfig, validateShopifyUrl, normalizeUrl, getGithubToken, saveGithubToken, getKeystore, saveKeystore };

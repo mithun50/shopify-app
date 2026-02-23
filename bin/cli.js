@@ -6,7 +6,7 @@ const inquirer = require('inquirer');
 const path = require('path');
 const fs = require('fs-extra');
 const { generateProject } = require('../src/index');
-const { loadConfig, saveConfig, validateShopifyUrl, getGithubToken, saveGithubToken } = require('../src/config');
+const { loadConfig, saveConfig, validateShopifyUrl, getGithubToken, saveGithubToken, getKeystore, saveKeystore } = require('../src/config');
 
 const program = new Command();
 
@@ -330,6 +330,99 @@ program
     console.log(chalk.gray('\n  Options:'));
     console.log(chalk.gray('  --fcm <path>   Enable FCM with google-services.json'));
     console.log(chalk.gray('  --disable      Disable FCM push notifications\n'));
+  });
+
+program
+  .command('keystore')
+  .description('Generate a signing keystore for Android release builds')
+  .option('--show', 'Show current keystore status')
+  .action(async (options) => {
+    const existing = getKeystore();
+
+    if (options.show) {
+      if (existing) {
+        console.log(chalk.cyan('\n  Keystore Configuration:'));
+        console.log(chalk.white(`  Alias:    ${existing.alias}`));
+        console.log(chalk.white(`  Created:  ${existing.createdAt || 'unknown'}`));
+        console.log(chalk.green('  Status:   saved (will be used for all builds)\n'));
+      } else {
+        console.log(chalk.yellow('\n  No keystore configured. Run "shopify2app keystore" to generate one.\n'));
+      }
+      return;
+    }
+
+    if (existing) {
+      const { overwrite } = await inquirer.prompt([{
+        type: 'confirm',
+        name: 'overwrite',
+        message: 'A keystore already exists. Generate a new one? (WARNING: builds signed with the old key will need re-publishing)',
+        default: false,
+      }]);
+      if (!overwrite) {
+        console.log(chalk.gray('\n  Keeping existing keystore.\n'));
+        return;
+      }
+    }
+
+    // Check for keytool
+    const { execSync } = require('child_process');
+    try {
+      execSync('keytool -help', { stdio: 'pipe' });
+    } catch {
+      console.log(chalk.red('\n  Error: keytool not found. Install JDK to generate a keystore.'));
+      console.log(chalk.gray('  On Ubuntu/Debian: sudo apt install default-jdk'));
+      console.log(chalk.gray('  On macOS: brew install openjdk'));
+      console.log(chalk.gray('  On Termux: pkg install openjdk-17\n'));
+      process.exit(1);
+    }
+
+    // Generate password
+    const password = require('crypto').randomBytes(16).toString('hex');
+    const alias = 'release';
+    const keystorePath = path.join(require('os').tmpdir(), `shopify2app-${Date.now()}.jks`);
+
+    const config = loadConfig();
+    const appName = (config && config.appName) || 'ShopifyApp';
+
+    console.log(chalk.cyan('\n  Generating signing keystore...\n'));
+
+    try {
+      const dname = `CN=${appName}, OU=Mobile, O=${appName}, L=City, ST=State, C=US`;
+      execSync([
+        'keytool', '-genkey', '-v',
+        '-keystore', `"${keystorePath}"`,
+        '-keyalg', 'RSA', '-keysize', '2048', '-validity', '10000',
+        '-alias', alias,
+        '-storepass', password,
+        '-keypass', password,
+        '-dname', `"${dname}"`,
+      ].join(' '), { stdio: 'pipe' });
+
+      const keystoreBase64 = fs.readFileSync(keystorePath).toString('base64');
+      fs.removeSync(keystorePath);
+
+      saveKeystore({
+        base64: keystoreBase64,
+        password: password,
+        alias: alias,
+        createdAt: new Date().toISOString().split('T')[0],
+      });
+
+      console.log(chalk.green('  Keystore generated and saved to config!\n'));
+      console.log(chalk.white('  Details:'));
+      console.log(chalk.gray(`  Alias:      ${alias}`));
+      console.log(chalk.gray(`  Algorithm:  RSA 2048-bit`));
+      console.log(chalk.gray(`  Validity:   10,000 days`));
+      console.log(chalk.gray(`  Stored in:  app.config.json (base64 encoded)\n`));
+      console.log(chalk.white('  This keystore will be used automatically for all builds.'));
+      console.log(chalk.white('  Run "shopify2app build" to create a signed release.\n'));
+      console.log(chalk.yellow('  IMPORTANT: Back up your app.config.json!'));
+      console.log(chalk.yellow('  If you lose the keystore, you cannot update apps on Play Store.\n'));
+    } catch (err) {
+      fs.removeSync(keystorePath);
+      console.log(chalk.red(`\n  Error generating keystore: ${err.message}\n`));
+      process.exit(1);
+    }
   });
 
 program

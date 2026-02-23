@@ -40,7 +40,10 @@ npm install
 # 1. Generate your app
 shopify2app init --url https://mystore.myshopify.com --name "My Store" --color "#FF5733"
 
-# 2. Build in the cloud (creates GitHub repo, runs CI, downloads APK + iOS archive)
+# 2. (Optional) Generate a signing keystore for release builds
+shopify2app keystore
+
+# 3. Build in the cloud (creates GitHub repo, runs CI, downloads APK + iOS archive)
 shopify2app build
 
 # That's it! Your APK is in ./builds/
@@ -183,6 +186,35 @@ The token needs `repo` and `workflow` scopes to create repos and push workflow f
 
 Running `shopify2app build` again will detect the existing repo, force-push updated code, and trigger fresh builds. Previous build artifacts on GitHub are not affected.
 
+### `shopify2app keystore`
+
+Generate a persistent signing keystore for Android release builds. The keystore is saved to your config and automatically included in every `shopify2app build` — one keystore, consistent across all your projects.
+
+```bash
+# Generate a new keystore
+shopify2app keystore
+
+# View current keystore status
+shopify2app keystore --show
+```
+
+| Option | Description |
+|--------|-------------|
+| `--show` | Show current keystore status |
+
+**What it does:**
+1. Generates a 2048-bit RSA keystore using `keytool` (requires JDK)
+2. Saves it base64-encoded to `app.config.json` with a random 32-char password
+3. On `shopify2app build`, the keystore is automatically included in the repo's `signing/` directory
+4. The GitHub Actions workflow detects it and uses it for release signing
+
+**Requirements:** JDK must be installed (`keytool` command). Install with:
+- Ubuntu/Debian: `sudo apt install default-jdk`
+- macOS: `brew install openjdk`
+- Termux: `pkg install openjdk-17`
+
+> **IMPORTANT:** Back up your `app.config.json`! If you lose the keystore, you cannot push updates to apps already published on the Play Store.
+
 ### `shopify2app notifications`
 
 Configure push notifications.
@@ -264,9 +296,21 @@ iOS uses native APNs (no Firebase SDK required). The app registers for remote no
 
 The generated project includes workflows that build automatically on push to `main`.
 
-### Required Secrets
+### Android Signing (3-Tier Priority)
 
-For **signed release builds**, add these secrets to your GitHub repo (`Settings > Secrets and variables > Actions`):
+The workflow uses the first available signing method:
+
+| Priority | Method | Setup |
+|----------|--------|-------|
+| 1. **Repo keystore** | `signing/keystore.jks` in the repo | Run `shopify2app keystore` before `shopify2app build` (recommended) |
+| 2. **GitHub secrets** | `KEYSTORE_BASE64` secret | Add secrets manually in repo settings |
+| 3. **Auto-generated** | Temporary keystore created during build | No setup needed (not for production) |
+
+**Recommended:** Run `shopify2app keystore` once. It generates a persistent keystore saved in your config. Every `shopify2app build` automatically includes it — no manual secret setup required.
+
+### Using GitHub Secrets (Alternative)
+
+If you prefer managing secrets manually, add these to your GitHub repo (`Settings > Secrets and variables > Actions`):
 
 | Secret | Description |
 |--------|-------------|
@@ -275,10 +319,8 @@ For **signed release builds**, add these secrets to your GitHub repo (`Settings 
 | `KEY_ALIAS` | Key alias name |
 | `KEY_PASSWORD` | Key password |
 
-### Creating a Keystore
-
 ```bash
-# Generate keystore
+# Generate keystore manually
 keytool -genkey -v -keystore release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias myapp
 
 # Base64 encode it
@@ -289,13 +331,12 @@ Copy the base64 output to the `KEYSTORE_BASE64` secret.
 
 ### Build Outputs
 
-Without signing secrets:
-- **Debug APK** — `app-debug` artifact
+Every build produces all three Android artifacts:
 
-With signing secrets configured:
-- **Release APK** — `app-release` artifact (direct install)
-- **Release AAB** — `app-release-bundle` artifact (Play Store upload)
-- **iOS Archive** — `ios-archive` artifact (unsigned, for App Store)
+- **Debug APK** — `app-debug` artifact (unsigned debug build)
+- **Release APK** — `app-release` artifact (signed, direct install)
+- **Release AAB** — `app-release-bundle` artifact (signed, Play Store upload)
+- **iOS Archive** — `ios-archive` artifact (unsigned, for re-signing)
 
 On GitHub Release creation, signed APK and AAB are automatically attached.
 
