@@ -10,6 +10,7 @@ Convert your Shopify store into a native mobile app (Android APK/AAB + iOS IPA) 
 - **Pull-to-refresh**, progress bar, offline detection with retry
 - **File upload** support (camera + gallery on Android, document picker on iOS)
 - **Notifications** — local reminders + optional FCM push notifications (Android) and APNs (iOS)
+- **One-command cloud build** — `shopify2app build` handles repo, CI, and artifact download
 - **GitHub Actions CI/CD** — builds are automated on every push
 - **Build outputs**: Debug APK, signed Release APK, Release AAB (Play Store), iOS archive
 
@@ -30,14 +31,20 @@ npm install
 ## Quick Start
 
 ```bash
-# Interactive setup
-shopify2app init
-
-# Or pass all options
+# 1. Generate your app
 shopify2app init --url https://mystore.myshopify.com --name "My Store" --color "#FF5733"
 
-# With a custom splash logo
-shopify2app init --url https://mystore.com --name "My Store" --logo ./logo.png
+# 2. Build in the cloud (creates GitHub repo, runs CI, downloads APK + iOS archive)
+shopify2app build
+
+# That's it! Your APK is in ./builds/
+```
+
+Or interactive setup:
+
+```bash
+shopify2app init          # prompts for store URL, app name, etc.
+shopify2app build         # prompts for GitHub token, then builds automatically
 ```
 
 This generates a complete project in `output/` with Android + iOS source code and GitHub Actions workflows.
