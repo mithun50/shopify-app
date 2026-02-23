@@ -117,12 +117,20 @@ async function generateAndroidProject(config, outputDir) {
     await fs.writeFile(path.join(drawableDir, 'splash_logo.png'), createDefaultLogoPNG(512));
   }
 
-  // Copy google-services.json if FCM is enabled
+  // Handle FCM files
   if (config.fcmEnabled && config.fcmConfigPath) {
+    // Copy google-services.json when FCM is enabled
     const fcmSrc = path.resolve(config.fcmConfigPath);
     if (await fs.pathExists(fcmSrc)) {
       await fs.copy(fcmSrc, path.join(androidDir, 'app', 'google-services.json'));
     }
+  } else {
+    // Clean up stale FCM files from previous runs when FCM is disabled
+    const packagePath = config.packageName.replace(/\./g, '/');
+    const staleFcmService = path.join(androidDir, 'app', 'src', 'main', 'java', packagePath, 'ShopifyFirebaseMessagingService.java');
+    const staleGoogleServices = path.join(androidDir, 'app', 'google-services.json');
+    if (await fs.pathExists(staleFcmService)) await fs.remove(staleFcmService);
+    if (await fs.pathExists(staleGoogleServices)) await fs.remove(staleGoogleServices);
   }
 }
 
