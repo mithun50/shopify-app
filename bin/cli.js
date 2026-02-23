@@ -14,7 +14,7 @@ const program = new Command();
 program
   .name('shopify2app')
   .description('Convert your Shopify store into a native mobile app')
-  .version('1.2.0');
+  .version('1.3.0');
 
 program
   .command('init')
