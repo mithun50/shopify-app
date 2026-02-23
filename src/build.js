@@ -342,6 +342,9 @@ function getArtifactFilename(artifactName, appName) {
   if (lowerName.includes('release-bundle') || lowerName.includes('release-aab')) {
     return `${safeName}-release.aab`;
   }
+  if (lowerName.includes('release-signed')) {
+    return `${safeName}-release-signed.apk`;
+  }
   if (lowerName.includes('release')) {
     return `${safeName}-release.apk`;
   }
