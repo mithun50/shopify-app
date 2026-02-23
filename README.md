@@ -1,5 +1,11 @@
 # Shopify2App
 
+[![npm version](https://img.shields.io/npm/v/shopify2app.svg)](https://www.npmjs.com/package/shopify2app)
+[![npm downloads](https://img.shields.io/npm/dm/shopify2app.svg)](https://www.npmjs.com/package/shopify2app)
+[![license](https://img.shields.io/npm/l/shopify2app.svg)](https://github.com/mithun50/shopify-app/blob/main/LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/mithun50/shopify-app.svg)](https://github.com/mithun50/shopify-app)
+[![Node.js](https://img.shields.io/node/v/shopify2app.svg)](https://nodejs.org)
+
 Convert your Shopify store into a native mobile app (Android APK/AAB + iOS IPA) with a single command. No coding required.
 
 ## Features
@@ -23,8 +29,8 @@ npm install -g shopify2app
 Or run locally:
 
 ```bash
-git clone https://github.com/mithungowda/shopify2app.git
-cd shopify2app
+git clone https://github.com/mithun50/shopify-app.git
+cd shopify-app
 npm install
 ```
 
@@ -355,6 +361,10 @@ output/
     ShopifyApp/           # AppDelegate, WebViewController, NotificationHelper, assets
     ShopifyApp.xcodeproj/
 ```
+
+## Author
+
+**Mithun Gowda B** — [mithungowda.b7411@gmail.com](mailto:mithungowda.b7411@gmail.com)
 
 ## License
 

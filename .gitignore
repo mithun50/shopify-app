@@ -1,6 +1,7 @@
 node_modules/
 app.config.json
+output/
+builds/
+.build-staging/
 *.log
 .DS_Store
-.build-staging/
-builds/

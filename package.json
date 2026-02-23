@@ -1,6 +1,6 @@
 {
   "name": "shopify2app",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Convert your Shopify store into a native mobile app (Android APK/AAB + iOS IPA)",
   "main": "src/index.js",
   "bin": {
@@ -17,9 +17,28 @@
     "ios",
     "webview",
     "apk",
-    "ipa"
+    "ipa",
+    "aab",
+    "shopify-app",
+    "app-builder",
+    "cloud-build",
+    "github-actions"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mithun50/shopify-app.git"
+  },
+  "homepage": "https://github.com/mithun50/shopify-app#readme",
+  "bugs": {
+    "url": "https://github.com/mithun50/shopify-app/issues"
+  },
   "author": "Mithun Gowda B <mithungowda.b7411@gmail.com>",
+  "files": [
+    "bin/",
+    "src/",
+    "templates/",
+    "README.md"
+  ],
   "license": "MIT",
   "dependencies": {
     "chalk": "^4.1.2",
