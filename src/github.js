@@ -5,11 +5,11 @@ const https = require('https');
 const API_HOST = 'api.github.com';
 const USER_AGENT = 'shopify2app-cli';
 
-function githubRequest(method, path, token, body, binary) {
+function githubRequest(method, path, token, body) {
   return new Promise((resolve, reject) => {
     const headers = {
       'User-Agent': USER_AGENT,
-      'Accept': binary ? 'application/octet-stream' : 'application/vnd.github+json',
+      'Accept': 'application/vnd.github+json',
       'Authorization': `Bearer ${token}`,
     };
 
@@ -25,22 +25,17 @@ function githubRequest(method, path, token, body, binary) {
     };
 
     const req = https.request(options, (res) => {
-      // Follow redirects (302) for artifact downloads
+      // Follow redirects — return location for caller to handle
       if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
-        if (binary) {
-          downloadFromUrl(res.headers.location).then(resolve).catch(reject);
-          return;
-        }
+        resolve({ statusCode: res.statusCode, data: null, redirect: res.headers.location });
+        res.resume();
+        return;
       }
 
       const chunks = [];
       res.on('data', (chunk) => chunks.push(chunk));
       res.on('end', () => {
         const buffer = Buffer.concat(chunks);
-        if (binary) {
-          resolve({ statusCode: res.statusCode, data: buffer });
-          return;
-        }
         const text = buffer.toString('utf-8');
         let data = null;
         try {
@@ -149,11 +144,13 @@ async function getRunArtifacts(token, owner, repo, runId) {
 }
 
 async function downloadArtifact(token, owner, repo, artifactId) {
-  const res = await githubRequest('GET', `/repos/${owner}/${repo}/actions/artifacts/${artifactId}/zip`, token, null, true);
-  if (res.statusCode !== 200 && !res.data) {
-    throw new Error(`Failed to download artifact (HTTP ${res.statusCode})`);
+  // GitHub returns a 302 redirect to a temporary download URL
+  const res = await githubRequest('GET', `/repos/${owner}/${repo}/actions/artifacts/${artifactId}/zip`, token);
+  if (res.redirect) {
+    const download = await downloadFromUrl(res.redirect);
+    return download.data;
   }
-  return res.data;
+  throw new Error(`Failed to download artifact (HTTP ${res.statusCode}): expected redirect`);
 }
 
 module.exports = {

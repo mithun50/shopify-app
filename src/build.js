@@ -268,51 +268,69 @@ async function stepDownloadArtifacts(ctx) {
 
 // --- Zip extraction (no external deps) ---
 function extractSingleFile(zipBuffer) {
-  // Parse ZIP local file header to extract the first file
-  // ZIP local file header signature: 0x04034b50
-  if (zipBuffer.length < 30) return null;
+  // Parse from the central directory (at end of zip) to get accurate sizes
+  // This handles zips that use data descriptors (sizes=0 in local header)
+  if (zipBuffer.length < 22) return null;
 
-  const sig = zipBuffer.readUInt32LE(0);
-  if (sig !== 0x04034b50) return null;
-
-  const compressionMethod = zipBuffer.readUInt16LE(8);
-  const compressedSize = zipBuffer.readUInt32LE(18);
-  const uncompressedSize = zipBuffer.readUInt32LE(22);
-  const fileNameLen = zipBuffer.readUInt16LE(26);
-  const extraFieldLen = zipBuffer.readUInt16LE(28);
-
-  const fileName = zipBuffer.slice(30, 30 + fileNameLen).toString('utf-8');
-  const dataOffset = 30 + fileNameLen + extraFieldLen;
-
-  // Skip directories
-  if (fileName.endsWith('/') || uncompressedSize === 0) {
-    // Try next entry
-    const nextOffset = dataOffset + compressedSize;
-    if (nextOffset < zipBuffer.length) {
-      return extractSingleFile(zipBuffer.slice(nextOffset));
+  // Find End of Central Directory record (scan from end)
+  let eocdOffset = -1;
+  for (let i = zipBuffer.length - 22; i >= Math.max(0, zipBuffer.length - 65557); i--) {
+    if (zipBuffer.readUInt32LE(i) === 0x06054b50) {
+      eocdOffset = i;
+      break;
     }
-    return null;
   }
+  if (eocdOffset === -1) return null;
 
-  const compressedData = zipBuffer.slice(dataOffset, dataOffset + compressedSize);
+  const centralDirOffset = zipBuffer.readUInt32LE(eocdOffset + 16);
+  const totalEntries = zipBuffer.readUInt16LE(eocdOffset + 10);
+  if (totalEntries === 0) return null;
 
-  let data;
-  if (compressionMethod === 0) {
-    // Stored (no compression)
-    data = compressedData;
-  } else if (compressionMethod === 8) {
-    // Deflated
-    try {
-      data = zlib.inflateRawSync(compressedData);
-    } catch {
-      // If inflate fails, return raw data
+  // Read first non-directory entry from central directory
+  let offset = centralDirOffset;
+  for (let i = 0; i < totalEntries; i++) {
+    if (offset + 46 > zipBuffer.length) return null;
+    if (zipBuffer.readUInt32LE(offset) !== 0x02014b50) return null;
+
+    const compressionMethod = zipBuffer.readUInt16LE(offset + 10);
+    const compressedSize = zipBuffer.readUInt32LE(offset + 20);
+    const uncompressedSize = zipBuffer.readUInt32LE(offset + 24);
+    const fileNameLen = zipBuffer.readUInt16LE(offset + 28);
+    const extraFieldLen = zipBuffer.readUInt16LE(offset + 30);
+    const commentLen = zipBuffer.readUInt16LE(offset + 32);
+    const localHeaderOffset = zipBuffer.readUInt32LE(offset + 42);
+
+    const fileName = zipBuffer.slice(offset + 46, offset + 46 + fileNameLen).toString('utf-8');
+
+    // Skip directories
+    if (fileName.endsWith('/') || (compressedSize === 0 && uncompressedSize === 0)) {
+      offset += 46 + fileNameLen + extraFieldLen + commentLen;
+      continue;
+    }
+
+    // Read data from local file header position
+    const localFnLen = zipBuffer.readUInt16LE(localHeaderOffset + 26);
+    const localExtraLen = zipBuffer.readUInt16LE(localHeaderOffset + 28);
+    const dataStart = localHeaderOffset + 30 + localFnLen + localExtraLen;
+    const compressedData = zipBuffer.slice(dataStart, dataStart + compressedSize);
+
+    let data;
+    if (compressionMethod === 0) {
+      data = compressedData;
+    } else if (compressionMethod === 8) {
+      try {
+        data = zlib.inflateRawSync(compressedData);
+      } catch {
+        data = compressedData;
+      }
+    } else {
       data = compressedData;
     }
-  } else {
-    data = compressedData;
+
+    return { name: fileName, data: data };
   }
 
-  return { name: fileName, data: data };
+  return null;
 }
 
 function getArtifactFilename(artifactName, appName) {
