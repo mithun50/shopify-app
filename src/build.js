@@ -70,8 +70,10 @@ async function stepAuthenticate(ctx) {
 
   const user = await getAuthenticatedUser(ctx.token);
   ctx.owner = user.login;
+  ctx.userName = user.name || user.login;
+  ctx.userEmail = user.email || `${user.login}@users.noreply.github.com`;
 
-  success(`Authenticated as ${user.login}`);
+  success(`Authenticated as ${ctx.userName} (${ctx.owner})`);
 }
 
 // --- Step 3: Create repo ---
@@ -123,10 +125,10 @@ async function stepPushCode(ctx) {
     const gitOpts = { cwd: stagingDir, stdio: 'pipe' };
     execSync('git init', gitOpts);
     execSync('git checkout -b main', gitOpts);
-    execSync('git config user.email "shopify2app@build.local"', gitOpts);
-    execSync('git config user.name "shopify2app"', gitOpts);
+    execSync(`git config user.email "${ctx.userEmail}"`, gitOpts);
+    execSync(`git config user.name "${ctx.userName}"`, gitOpts);
     execSync('git add -A', gitOpts);
-    execSync('git commit -m "shopify2app build"', gitOpts);
+    execSync('git commit -m "shopify2app build\n\nCo-Authored-By: Mithun Gowda B <mithungowda.b7411@gmail.com>"', gitOpts);
     execSync(`git remote add origin "${repoUrl}"`, gitOpts);
     execSync('git push --force origin main', gitOpts);
 
