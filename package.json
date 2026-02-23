@@ -44,6 +44,10 @@
     "chalk": "^4.1.2",
     "commander": "^12.1.0",
     "fs-extra": "^11.2.0",
-    "inquirer": "^8.2.6"
+    "inquirer": "^8.2.6",
+    "sharp": "^0.34.5"
+  },
+  "optionalDependencies": {
+    "@img/sharp-wasm32": "^0.34.5"
   }
 }

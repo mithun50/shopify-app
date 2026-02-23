@@ -2,6 +2,7 @@ const fs = require('fs-extra');
 const path = require('path');
 const { createSolidPNG, hexToRgb } = require('../png');
 const { createDefaultLogoPNG } = require('../logo');
+const { copyAsPng } = require('../imgutil');
 
 const TEMPLATE_DIR = path.join(__dirname, '..', '..', 'templates', 'ios');
 
@@ -56,7 +57,7 @@ async function generateIosProject(config, outputDir) {
   await fs.ensureDir(splashDir);
 
   if (config.logoPath && await fs.pathExists(config.logoPath)) {
-    await fs.copy(config.logoPath, path.join(splashDir, 'splash_logo.png'));
+    await copyAsPng(config.logoPath, path.join(splashDir, 'splash_logo.png'));
     await fs.writeJson(path.join(splashDir, 'Contents.json'), {
       images: [
         { idiom: 'universal', filename: 'splash_logo.png', scale: '1x' },

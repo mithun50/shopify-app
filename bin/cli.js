@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs-extra');
 const { generateProject } = require('../src/index');
 const { loadConfig, saveConfig, validateShopifyUrl, getGithubToken, saveGithubToken, getKeystore, saveKeystore } = require('../src/config');
+const { copyAsPng } = require('../src/imgutil');
 
 const program = new Command();
 
@@ -222,13 +223,13 @@ program
     for (const name of androidSizes) {
       const dir = path.join(outputDir, 'android', 'app', 'src', 'main', 'res', name);
       await fs.ensureDir(dir);
-      await fs.copy(resolvedPath, path.join(dir, 'ic_launcher.png'));
+      await copyAsPng(resolvedPath, path.join(dir, 'ic_launcher.png'));
     }
 
     // Copy icon to iOS assets
     const iosDir = path.join(outputDir, 'ios', 'ShopifyApp', 'Assets.xcassets', 'AppIcon.appiconset');
     await fs.ensureDir(iosDir);
-    await fs.copy(resolvedPath, path.join(iosDir, 'icon-1024.png'));
+    await copyAsPng(resolvedPath, path.join(iosDir, 'icon-1024.png'), 1024);
 
     console.log(chalk.green('\n  App icon updated successfully!\n'));
     console.log(chalk.gray('  Tip: For best results, use a 1024x1024 PNG image.\n'));
@@ -259,12 +260,12 @@ program
     // Copy to Android drawable
     const drawableDir = path.join(outputDir, 'android', 'app', 'src', 'main', 'res', 'drawable');
     await fs.ensureDir(drawableDir);
-    await fs.copy(resolvedPath, path.join(drawableDir, 'splash_logo.png'));
+    await copyAsPng(resolvedPath, path.join(drawableDir, 'splash_logo.png'));
 
     // Copy to iOS SplashLogo imageset
     const iosImagesetDir = path.join(outputDir, 'ios', 'ShopifyApp', 'Assets.xcassets', 'SplashLogo.imageset');
     await fs.ensureDir(iosImagesetDir);
-    await fs.copy(resolvedPath, path.join(iosImagesetDir, 'splash_logo.png'));
+    await copyAsPng(resolvedPath, path.join(iosImagesetDir, 'splash_logo.png'));
     await fs.writeJson(path.join(iosImagesetDir, 'Contents.json'), {
       images: [
         { idiom: 'universal', filename: 'splash_logo.png', scale: '1x' },
