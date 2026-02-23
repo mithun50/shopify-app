@@ -2,3 +2,5 @@ node_modules/
 app.config.json
 *.log
 .DS_Store
+.build-staging/
+builds/

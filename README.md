@@ -117,26 +117,58 @@ shopify2app build --token ghp_xxx --public
 **Token resolution order:** `--token` flag → `GITHUB_TOKEN` env variable → saved config → interactive prompt.
 
 **What it does:**
-1. Validates your project (output/ directory must exist)
+1. Validates your project (`output/` directory, workflows, and config must exist)
 2. Authenticates with GitHub using your token
-3. Creates a private repo (or reuses an existing one)
-4. Pushes the generated code with workflows at repo root
-5. Polls GitHub Actions every 15s until builds complete (30 min timeout)
-6. Downloads build artifacts to your output directory
+3. Creates a private repo named after your app (or reuses an existing one)
+4. Restructures and pushes code so GitHub Actions can discover workflows
+5. Polls GitHub Actions every 15s until all builds complete (30 min timeout)
+6. Downloads and extracts build artifacts to your local output directory
+
+**How the push works — repo structure:**
+
+Your local `output/` directory has workflows nested inside it (`output/.github/workflows/`), but GitHub Actions only discovers workflows at the repo root (`.github/workflows/`). The build command creates a staging directory that restructures the files:
+
+```
+Local:                          Pushed to GitHub:
+output/                         .github/
+  .github/workflows/    ──→       workflows/
+    build-android.yml               build-android.yml
+    build-ios.yml                    build-ios.yml
+  android/               ──→   output/
+  ios/                            android/...
+                                  ios/...
+```
+
+The workflow templates already reference `./output/android` and `./output/ios` as their `working-directory`, which matches this pushed structure. No template changes are needed — the build command handles the restructuring automatically.
+
+**If you modify workflow templates** (`templates/.github/workflows/`), keep these path rules:
+- `working-directory:` must use `./output/android` or `./output/ios`
+- `path:` in `upload-artifact` must use `output/android/...` or `output/ios/...` (no leading `./`)
+- These paths work because `output/` is preserved as a subdirectory in the pushed repo
 
 **Build artifacts:**
 
 | Artifact | File | Description |
 |----------|------|-------------|
-| Debug APK | `AppName-debug.apk` | Unsigned debug build |
-| Release APK | `AppName-release.apk` | Signed release (if secrets configured) |
-| Release AAB | `AppName-release.aab` | Play Store bundle (if secrets configured) |
-| iOS Archive | `AppName-ios.xcarchive.zip` | Xcode archive (if iOS workflow succeeds) |
+| Debug APK | `AppName-debug.apk` | Unsigned debug build (always produced) |
+| Release APK | `AppName-release.apk` | Signed release (requires signing secrets) |
+| Release AAB | `AppName-release.aab` | Play Store bundle (requires signing secrets) |
+| iOS Archive | `AppName-ios.xcarchive.zip` | Xcode archive (unsigned, for re-signing) |
 
 **Creating a GitHub Token:**
-1. Go to [GitHub Settings → Developer Settings → Personal Access Tokens → Fine-grained tokens](https://github.com/settings/tokens?type=beta)
-2. Create a new token with **Repository** permissions: `Read and write` access to `Contents`, `Actions`, and `Administration`
-3. Or use a classic token with `repo` and `workflow` scopes
+
+The token needs `repo` and `workflow` scopes to create repos and push workflow files.
+
+1. Go to [GitHub Settings → Personal Access Tokens → Tokens (classic)](https://github.com/settings/tokens)
+2. Click **Generate new token (classic)**
+3. Select scopes: **`repo`** (full) and **`workflow`**
+4. Copy the token — use it with `--token` or set `GITHUB_TOKEN` env var
+
+> **Note:** Fine-grained tokens also work — grant `Read and write` access to `Contents`, `Actions`, and `Administration` on the target repo.
+
+**Re-running builds:**
+
+Running `shopify2app build` again will detect the existing repo, force-push updated code, and trigger fresh builds. Previous build artifacts on GitHub are not affected.
 
 ### `shopify2app notifications`
 
