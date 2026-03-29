@@ -2,7 +2,9 @@ package {{PACKAGE_NAME}};
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
@@ -12,6 +14,7 @@ import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.View;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -30,6 +33,7 @@ import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 
 import java.util.Collections;
+import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -131,11 +135,17 @@ public class MainActivity extends AppCompatActivity {
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
 
+        // Attach native storage bridge — backs sessionStorage with Android SharedPreferences
+        // so auth state survives cross-origin redirects (firebaseapp.com ↔ app domain)
+        webView.addJavascriptInterface(new WebStorageBridge(this), "__NativeBridge");
+
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageStarted(WebView view, String url, Bitmap favicon) {
                 progressBar.setVisibility(View.VISIBLE);
                 offlineView.setVisibility(View.GONE);
+                // Fallback injection for devices that don't support DOCUMENT_START_SCRIPT
+                view.evaluateJavascript(getSessionStorageBridgeScript(), null);
             }
 
             @Override
@@ -241,49 +251,86 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private String getSessionStorageBridgeScript() {
+        // Uses __NativeBridge (Android SharedPreferences) as primary storage so that
+        // sessionStorage state is shared across ALL origins in this WebView — including
+        // cross-origin iframes and redirect hops (e.g. firebaseapp.com ↔ app domain).
+        // Falls back to localStorage if the native bridge is unavailable.
         return "(function() {" +
             "  try {" +
-            "    var PREFIX = '__wv_ss__';" +
-            "    var keys = [];" +
-            "    for (var i = 0; i < localStorage.length; i++) {" +
-            "      var k = localStorage.key(i);" +
-            "      if (k && k.indexOf(PREFIX) === 0) keys.push(k);" +
-            "    }" +
-            "    keys.forEach(function(k) {" +
-            "      var realKey = k.slice(PREFIX.length);" +
-            "      var val = localStorage.getItem(k);" +
-            "      if (val !== null) sessionStorage.setItem(realKey, val);" +
-            "    });" +
-            "    var _setItem = sessionStorage.setItem.bind(sessionStorage);" +
-            "    sessionStorage.setItem = function(key, value) {" +
-            "      try { localStorage.setItem(PREFIX + key, value); } catch(e) {}" +
-            "      return _setItem(key, value);" +
-            "    };" +
-            "    var _getItem = sessionStorage.getItem.bind(sessionStorage);" +
-            "    sessionStorage.getItem = function(key) {" +
-            "      var v = _getItem(key);" +
-            "      if (v === null) { try { v = localStorage.getItem(PREFIX + key); } catch(e) {} }" +
-            "      return v;" +
-            "    };" +
-            "    var _removeItem = sessionStorage.removeItem.bind(sessionStorage);" +
-            "    sessionStorage.removeItem = function(key) {" +
-            "      try { localStorage.removeItem(PREFIX + key); } catch(e) {}" +
-            "      return _removeItem(key);" +
-            "    };" +
-            "    var _clear = sessionStorage.clear.bind(sessionStorage);" +
-            "    sessionStorage.clear = function() {" +
-            "      try {" +
-            "        var toRemove = [];" +
-            "        for (var i = 0; i < localStorage.length; i++) {" +
-            "          var k = localStorage.key(i);" +
-            "          if (k && k.indexOf(PREFIX) === 0) toRemove.push(k);" +
+            "    var store = (typeof __NativeBridge !== 'undefined') ? {" +
+            "      getItem: function(k) { return __NativeBridge.getItem(k); }," +
+            "      setItem: function(k,v) { __NativeBridge.setItem(k, v); }," +
+            "      removeItem: function(k) { __NativeBridge.removeItem(k); }," +
+            "      clear: function() { __NativeBridge.clear(); }," +
+            "      keys: function() { var s=__NativeBridge.keys(); try{return JSON.parse(s);}catch(e){return [];} }" +
+            "    } : {" +
+            "      getItem: function(k) { return localStorage.getItem('__wv_ss__'+k); }," +
+            "      setItem: function(k,v) { localStorage.setItem('__wv_ss__'+k, v); }," +
+            "      removeItem: function(k) { localStorage.removeItem('__wv_ss__'+k); }," +
+            "      clear: function() { " +
+            "        for(var i=localStorage.length-1;i>=0;i--){" +
+            "          var k=localStorage.key(i); if(k&&k.indexOf('__wv_ss__')===0) localStorage.removeItem(k);" +
             "        }" +
-            "        toRemove.forEach(function(k) { localStorage.removeItem(k); });" +
-            "      } catch(e) {}" +
-            "      return _clear();" +
+            "      }," +
+            "      keys: function() { var a=[]; for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i); if(k&&k.indexOf('__wv_ss__')===0) a.push(k.slice(9));} return a; }" +
             "    };" +
+            "    store.keys().forEach(function(k) {" +
+            "      var v = store.getItem(k);" +
+            "      if (v !== null) try { sessionStorage.setItem(k, v); } catch(e) {}" +
+            "    });" +
+            "    var _set = sessionStorage.setItem.bind(sessionStorage);" +
+            "    sessionStorage.setItem = function(k,v) { store.setItem(k,v); return _set(k,v); };" +
+            "    var _get = sessionStorage.getItem.bind(sessionStorage);" +
+            "    sessionStorage.getItem = function(k) { var v=_get(k); return v!==null?v:store.getItem(k); };" +
+            "    var _rm = sessionStorage.removeItem.bind(sessionStorage);" +
+            "    sessionStorage.removeItem = function(k) { store.removeItem(k); return _rm(k); };" +
+            "    var _cl = sessionStorage.clear.bind(sessionStorage);" +
+            "    sessionStorage.clear = function() { store.clear(); return _cl(); };" +
             "  } catch(e) {}" +
             "})();";
+    }
+
+    // Native bridge: stores sessionStorage data in Android SharedPreferences so it
+    // persists across all origins and page navigations inside this WebView instance.
+    public static class WebStorageBridge {
+        private final SharedPreferences prefs;
+
+        WebStorageBridge(Context context) {
+            prefs = context.getSharedPreferences("wv_session_storage", Context.MODE_PRIVATE);
+        }
+
+        @JavascriptInterface
+        public String getItem(String key) {
+            return prefs.getString(key, null);
+        }
+
+        @JavascriptInterface
+        public void setItem(String key, String value) {
+            prefs.edit().putString(key, value).apply();
+        }
+
+        @JavascriptInterface
+        public void removeItem(String key) {
+            prefs.edit().remove(key).apply();
+        }
+
+        @JavascriptInterface
+        public void clear() {
+            prefs.edit().clear().apply();
+        }
+
+        @JavascriptInterface
+        public String keys() {
+            Map<String, ?> all = prefs.getAll();
+            StringBuilder sb = new StringBuilder("[");
+            boolean first = true;
+            for (String k : all.keySet()) {
+                if (!first) sb.append(",");
+                sb.append("\"").append(k.replace("\\", "\\\\").replace("\"", "\\\"")).append("\"");
+                first = false;
+            }
+            return sb.append("]").toString();
+        }
     }
 
     private void openInCustomTab(Uri uri) {
