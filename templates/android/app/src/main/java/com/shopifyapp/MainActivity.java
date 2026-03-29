@@ -161,27 +161,23 @@ public class MainActivity extends AppCompatActivity {
                 // Keep app domain and subdomains inside WebView
                 if (host.equals(storeUri.getHost()) || host.endsWith("." + storeUri.getHost())) return false;
 
-                // Shopify CDN / assets — stay in WebView
-                if (host.endsWith(".shopify.com") || host.endsWith(".shopifycdn.com") || host.endsWith(".myshopify.com")) return false;
-
-                // Auth providers — open in Chrome Custom Tabs so OAuth (Google, Apple, etc.) works
-                // Google blocks sign-in inside WebView; Custom Tabs use the real Chrome engine
-                if (host.equals("accounts.google.com") ||
-                    host.endsWith(".accounts.google.com") ||
-                    host.equals("google.com") ||
-                    host.endsWith(".google.com") ||
-                    host.endsWith(".firebaseapp.com") ||
+                // Keep ALL auth-related domains inside WebView.
+                // Firebase signInWithRedirect flows through these domains and MUST stay in the
+                // same WebView context so sessionStorage state is preserved end-to-end.
+                // (Chrome user agent + sessionStorage bridge handle compatibility.)
+                if (host.endsWith(".firebaseapp.com") ||
                     host.endsWith(".firebaseio.com") ||
                     host.endsWith(".firebase.com") ||
                     host.endsWith(".googleapis.com") ||
+                    host.equals("accounts.google.com") ||
+                    host.endsWith(".accounts.google.com") ||
+                    host.endsWith(".google.com") ||
                     host.equals("appleid.apple.com") ||
-                    host.endsWith(".appleid.apple.com") ||
                     host.endsWith(".apple.com") ||
                     host.equals("login.microsoftonline.com") ||
                     host.endsWith(".microsoftonline.com") ||
                     host.endsWith(".live.com") ||
                     host.equals("github.com") ||
-                    host.equals("api.github.com") ||
                     host.endsWith(".twitter.com") ||
                     host.endsWith(".x.com") ||
                     host.endsWith(".facebook.com") ||
@@ -189,12 +185,9 @@ public class MainActivity extends AppCompatActivity {
                     host.endsWith(".okta.com") ||
                     host.endsWith(".amazoncognito.com") ||
                     host.endsWith(".onelogin.com") ||
-                    host.endsWith(".pingidentity.com")) {
-                    openInCustomTab(request.getUrl());
-                    return true;
-                }
+                    host.endsWith(".pingidentity.com")) return false;
 
-                // Payment gateways — open in Custom Tabs for full compatibility and security
+                // Keep payment gateways inside WebView for uninterrupted checkout
                 if (host.endsWith(".stripe.com") ||
                     host.endsWith(".paypal.com") ||
                     host.endsWith(".braintreegateway.com") ||
@@ -204,15 +197,14 @@ public class MainActivity extends AppCompatActivity {
                     host.endsWith(".ccavenue.com") ||
                     host.endsWith(".klarna.com") ||
                     host.endsWith(".afterpay.com") ||
-                    host.endsWith(".affirm.com")) {
-                    openInCustomTab(request.getUrl());
-                    return true;
-                }
+                    host.endsWith(".affirm.com")) return false;
 
-                // Open all other external links in the default browser
+                // Shopify CDN / assets
+                if (host.endsWith(".shopify.com") || host.endsWith(".shopifycdn.com") || host.endsWith(".myshopify.com")) return false;
+
+                // Open truly external links in the default browser
                 try {
-                    Intent intent = new Intent(Intent.ACTION_VIEW, request.getUrl());
-                    startActivity(intent);
+                    startActivity(new Intent(Intent.ACTION_VIEW, request.getUrl()));
                 } catch (Exception ignored) {}
                 return true;
             }
