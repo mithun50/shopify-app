@@ -251,41 +251,56 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private String getSessionStorageBridgeScript() {
-        // Uses __NativeBridge (Android SharedPreferences) as primary storage so that
-        // sessionStorage state is shared across ALL origins in this WebView — including
-        // cross-origin iframes and redirect hops (e.g. firebaseapp.com ↔ app domain).
-        // Falls back to localStorage if the native bridge is unavailable.
+        // Backs sessionStorage with Android SharedPreferences so auth state survives
+        // cross-origin redirect hops (app domain ↔ firebaseapp.com).
+        //
+        // CRITICAL: keys are namespaced by origin so that the app domain and
+        // firebaseapp.com never overwrite each other's "firebase:pendingRedirect" keys.
+        // Without namespacing both origins write the same key to the same SharedPreferences
+        // slot — the last write wins and the Firebase auth handler reads a corrupt value.
         return "(function() {" +
             "  try {" +
-            "    var store = (typeof __NativeBridge !== 'undefined') ? {" +
-            "      getItem: function(k) { return __NativeBridge.getItem(k); }," +
-            "      setItem: function(k,v) { __NativeBridge.setItem(k, v); }," +
-            "      removeItem: function(k) { __NativeBridge.removeItem(k); }," +
-            "      clear: function() { __NativeBridge.clear(); }," +
-            "      keys: function() { var s=__NativeBridge.keys(); try{return JSON.parse(s);}catch(e){return [];} }" +
-            "    } : {" +
-            "      getItem: function(k) { return localStorage.getItem('__wv_ss__'+k); }," +
-            "      setItem: function(k,v) { localStorage.setItem('__wv_ss__'+k, v); }," +
-            "      removeItem: function(k) { localStorage.removeItem('__wv_ss__'+k); }," +
-            "      clear: function() { " +
-            "        for(var i=localStorage.length-1;i>=0;i--){" +
-            "          var k=localStorage.key(i); if(k&&k.indexOf('__wv_ss__')===0) localStorage.removeItem(k);" +
+            "    var bridge = (typeof __NativeBridge !== 'undefined') ? __NativeBridge : null;" +
+            "    if (!bridge) return;" +
+            "    var origin = (location.origin && location.origin !== 'null') ? location.origin" +
+            "                 : (location.protocol + '//' + location.host);" +
+            "    var ns = origin.replace(/[^a-zA-Z0-9]/g, '_') + '__';" +
+            "    try {" +
+            "      var all = JSON.parse(bridge.keys() || '[]');" +
+            "      all.forEach(function(k) {" +
+            "        if (k.indexOf(ns) === 0) {" +
+            "          var realKey = k.slice(ns.length);" +
+            "          if (sessionStorage.getItem(realKey) === null) {" +
+            "            var v = bridge.getItem(k);" +
+            "            if (v !== null) sessionStorage.setItem(realKey, v);" +
+            "          }" +
             "        }" +
-            "      }," +
-            "      keys: function() { var a=[]; for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i); if(k&&k.indexOf('__wv_ss__')===0) a.push(k.slice(9));} return a; }" +
-            "    };" +
-            "    store.keys().forEach(function(k) {" +
-            "      var v = store.getItem(k);" +
-            "      if (v !== null) try { sessionStorage.setItem(k, v); } catch(e) {}" +
-            "    });" +
+            "      });" +
+            "    } catch(e) {}" +
             "    var _set = sessionStorage.setItem.bind(sessionStorage);" +
-            "    sessionStorage.setItem = function(k,v) { store.setItem(k,v); return _set(k,v); };" +
+            "    sessionStorage.setItem = function(k, v) {" +
+            "      try { bridge.setItem(ns + k, String(v)); } catch(e) {}" +
+            "      return _set(k, v);" +
+            "    };" +
             "    var _get = sessionStorage.getItem.bind(sessionStorage);" +
-            "    sessionStorage.getItem = function(k) { var v=_get(k); return v!==null?v:store.getItem(k); };" +
+            "    sessionStorage.getItem = function(k) {" +
+            "      var v = _get(k);" +
+            "      if (v !== null) return v;" +
+            "      try { return bridge.getItem(ns + k); } catch(e) { return null; }" +
+            "    };" +
             "    var _rm = sessionStorage.removeItem.bind(sessionStorage);" +
-            "    sessionStorage.removeItem = function(k) { store.removeItem(k); return _rm(k); };" +
+            "    sessionStorage.removeItem = function(k) {" +
+            "      try { bridge.removeItem(ns + k); } catch(e) {}" +
+            "      return _rm(k);" +
+            "    };" +
             "    var _cl = sessionStorage.clear.bind(sessionStorage);" +
-            "    sessionStorage.clear = function() { store.clear(); return _cl(); };" +
+            "    sessionStorage.clear = function() {" +
+            "      try {" +
+            "        var all = JSON.parse(bridge.keys() || '[]');" +
+            "        all.forEach(function(k) { if (k.indexOf(ns) === 0) bridge.removeItem(k); });" +
+            "      } catch(e) {}" +
+            "      return _cl();" +
+            "    };" +
             "  } catch(e) {}" +
             "})();";
     }
@@ -581,68 +596,6 @@ public class MainActivity extends AppCompatActivity {
                 return true;
             }
         });
-    }
-
-    // Inject sessionStorage persistence bridge BEFORE any page scripts run.
-    // WebView isolates sessionStorage across redirect hops (unlike Chrome), which breaks
-    // Firebase signInWithRedirect. This script backs sessionStorage with localStorage
-    // so auth state survives the full redirect chain.
-    private void injectSessionStorageBridge() {
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            WebViewCompat.addDocumentStartJavaScript(webView, getSessionStorageBridgeScript(),
-                    Collections.singleton("*"));
-        }
-    }
-
-    private String getSessionStorageBridgeScript() {
-        return "(function() {" +
-            "  try {" +
-            "    var PREFIX = '__wv_ss__';" +
-            // Restore previously saved sessionStorage keys from localStorage on every page load
-            "    var keys = [];" +
-            "    for (var i = 0; i < localStorage.length; i++) {" +
-            "      var k = localStorage.key(i);" +
-            "      if (k && k.indexOf(PREFIX) === 0) keys.push(k);" +
-            "    }" +
-            "    keys.forEach(function(k) {" +
-            "      var realKey = k.slice(PREFIX.length);" +
-            "      var val = localStorage.getItem(k);" +
-            "      if (val !== null) sessionStorage.setItem(realKey, val);" +
-            "    });" +
-            // Override setItem — persist to localStorage as well
-            "    var _setItem = sessionStorage.setItem.bind(sessionStorage);" +
-            "    sessionStorage.setItem = function(key, value) {" +
-            "      try { localStorage.setItem(PREFIX + key, value); } catch(e) {}" +
-            "      return _setItem(key, value);" +
-            "    };" +
-            // Override getItem — fall back to localStorage if sessionStorage is empty
-            "    var _getItem = sessionStorage.getItem.bind(sessionStorage);" +
-            "    sessionStorage.getItem = function(key) {" +
-            "      var v = _getItem(key);" +
-            "      if (v === null) { try { v = localStorage.getItem(PREFIX + key); } catch(e) {} }" +
-            "      return v;" +
-            "    };" +
-            // Override removeItem
-            "    var _removeItem = sessionStorage.removeItem.bind(sessionStorage);" +
-            "    sessionStorage.removeItem = function(key) {" +
-            "      try { localStorage.removeItem(PREFIX + key); } catch(e) {}" +
-            "      return _removeItem(key);" +
-            "    };" +
-            // Override clear — only remove our prefixed keys from localStorage
-            "    var _clear = sessionStorage.clear.bind(sessionStorage);" +
-            "    sessionStorage.clear = function() {" +
-            "      try {" +
-            "        var toRemove = [];" +
-            "        for (var i = 0; i < localStorage.length; i++) {" +
-            "          var k = localStorage.key(i);" +
-            "          if (k && k.indexOf(PREFIX) === 0) toRemove.push(k);" +
-            "        }" +
-            "        toRemove.forEach(function(k) { localStorage.removeItem(k); });" +
-            "      } catch(e) {}" +
-            "      return _clear();" +
-            "    };" +
-            "  } catch(e) {}" +
-            "})();";
     }
 
     private void setupSwipeRefresh() {
