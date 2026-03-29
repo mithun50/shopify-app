@@ -26,6 +26,10 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.browser.customtabs.CustomTabsIntent;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
+import androidx.webkit.WebViewCompat;
+import androidx.webkit.WebViewFeature;
+
+import java.util.Collections;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -229,6 +233,65 @@ public class MainActivity extends AppCompatActivity {
                 return true;
             }
         });
+
+        injectSessionStorageBridge();
+    }
+
+    // Inject sessionStorage persistence bridge BEFORE any page scripts run.
+    // WebView isolates sessionStorage across redirect hops (unlike Chrome), which breaks
+    // Firebase signInWithRedirect. This script backs sessionStorage with localStorage
+    // so auth state survives the full redirect chain.
+    private void injectSessionStorageBridge() {
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            WebViewCompat.addDocumentStartJavaScript(webView, getSessionStorageBridgeScript(),
+                    Collections.singleton("*"));
+        }
+    }
+
+    private String getSessionStorageBridgeScript() {
+        return "(function() {" +
+            "  try {" +
+            "    var PREFIX = '__wv_ss__';" +
+            "    var keys = [];" +
+            "    for (var i = 0; i < localStorage.length; i++) {" +
+            "      var k = localStorage.key(i);" +
+            "      if (k && k.indexOf(PREFIX) === 0) keys.push(k);" +
+            "    }" +
+            "    keys.forEach(function(k) {" +
+            "      var realKey = k.slice(PREFIX.length);" +
+            "      var val = localStorage.getItem(k);" +
+            "      if (val !== null) sessionStorage.setItem(realKey, val);" +
+            "    });" +
+            "    var _setItem = sessionStorage.setItem.bind(sessionStorage);" +
+            "    sessionStorage.setItem = function(key, value) {" +
+            "      try { localStorage.setItem(PREFIX + key, value); } catch(e) {}" +
+            "      return _setItem(key, value);" +
+            "    };" +
+            "    var _getItem = sessionStorage.getItem.bind(sessionStorage);" +
+            "    sessionStorage.getItem = function(key) {" +
+            "      var v = _getItem(key);" +
+            "      if (v === null) { try { v = localStorage.getItem(PREFIX + key); } catch(e) {} }" +
+            "      return v;" +
+            "    };" +
+            "    var _removeItem = sessionStorage.removeItem.bind(sessionStorage);" +
+            "    sessionStorage.removeItem = function(key) {" +
+            "      try { localStorage.removeItem(PREFIX + key); } catch(e) {}" +
+            "      return _removeItem(key);" +
+            "    };" +
+            "    var _clear = sessionStorage.clear.bind(sessionStorage);" +
+            "    sessionStorage.clear = function() {" +
+            "      try {" +
+            "        var toRemove = [];" +
+            "        for (var i = 0; i < localStorage.length; i++) {" +
+            "          var k = localStorage.key(i);" +
+            "          if (k && k.indexOf(PREFIX) === 0) toRemove.push(k);" +
+            "        }" +
+            "        toRemove.forEach(function(k) { localStorage.removeItem(k); });" +
+            "      } catch(e) {}" +
+            "      return _clear();" +
+            "    };" +
+            "  } catch(e) {}" +
+            "})();";
     }
 
     private void openInCustomTab(Uri uri) {
@@ -479,6 +542,68 @@ public class MainActivity extends AppCompatActivity {
                 return true;
             }
         });
+    }
+
+    // Inject sessionStorage persistence bridge BEFORE any page scripts run.
+    // WebView isolates sessionStorage across redirect hops (unlike Chrome), which breaks
+    // Firebase signInWithRedirect. This script backs sessionStorage with localStorage
+    // so auth state survives the full redirect chain.
+    private void injectSessionStorageBridge() {
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            WebViewCompat.addDocumentStartJavaScript(webView, getSessionStorageBridgeScript(),
+                    Collections.singleton("*"));
+        }
+    }
+
+    private String getSessionStorageBridgeScript() {
+        return "(function() {" +
+            "  try {" +
+            "    var PREFIX = '__wv_ss__';" +
+            // Restore previously saved sessionStorage keys from localStorage on every page load
+            "    var keys = [];" +
+            "    for (var i = 0; i < localStorage.length; i++) {" +
+            "      var k = localStorage.key(i);" +
+            "      if (k && k.indexOf(PREFIX) === 0) keys.push(k);" +
+            "    }" +
+            "    keys.forEach(function(k) {" +
+            "      var realKey = k.slice(PREFIX.length);" +
+            "      var val = localStorage.getItem(k);" +
+            "      if (val !== null) sessionStorage.setItem(realKey, val);" +
+            "    });" +
+            // Override setItem — persist to localStorage as well
+            "    var _setItem = sessionStorage.setItem.bind(sessionStorage);" +
+            "    sessionStorage.setItem = function(key, value) {" +
+            "      try { localStorage.setItem(PREFIX + key, value); } catch(e) {}" +
+            "      return _setItem(key, value);" +
+            "    };" +
+            // Override getItem — fall back to localStorage if sessionStorage is empty
+            "    var _getItem = sessionStorage.getItem.bind(sessionStorage);" +
+            "    sessionStorage.getItem = function(key) {" +
+            "      var v = _getItem(key);" +
+            "      if (v === null) { try { v = localStorage.getItem(PREFIX + key); } catch(e) {} }" +
+            "      return v;" +
+            "    };" +
+            // Override removeItem
+            "    var _removeItem = sessionStorage.removeItem.bind(sessionStorage);" +
+            "    sessionStorage.removeItem = function(key) {" +
+            "      try { localStorage.removeItem(PREFIX + key); } catch(e) {}" +
+            "      return _removeItem(key);" +
+            "    };" +
+            // Override clear — only remove our prefixed keys from localStorage
+            "    var _clear = sessionStorage.clear.bind(sessionStorage);" +
+            "    sessionStorage.clear = function() {" +
+            "      try {" +
+            "        var toRemove = [];" +
+            "        for (var i = 0; i < localStorage.length; i++) {" +
+            "          var k = localStorage.key(i);" +
+            "          if (k && k.indexOf(PREFIX) === 0) toRemove.push(k);" +
+            "        }" +
+            "        toRemove.forEach(function(k) { localStorage.removeItem(k); });" +
+            "      } catch(e) {}" +
+            "      return _clear();" +
+            "    };" +
+            "  } catch(e) {}" +
+            "})();";
     }
 
     private void setupSwipeRefresh() {
