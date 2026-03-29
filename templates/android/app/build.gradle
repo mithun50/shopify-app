@@ -57,5 +57,6 @@ dependencies {
     implementation 'androidx.coordinatorlayout:coordinatorlayout:1.2.0'
     implementation 'androidx.activity:activity:1.8.2'
     implementation 'androidx.webkit:webkit:1.10.0'
+    implementation 'androidx.browser:browser:1.8.0'
     {{FCM_DEPENDENCIES}}
 }
