@@ -32,8 +32,14 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Scanner;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -144,8 +150,22 @@ public class MainActivity extends AppCompatActivity {
             public void onPageStarted(WebView view, String url, Bitmap favicon) {
                 progressBar.setVisibility(View.VISIBLE);
                 offlineView.setVisibility(View.GONE);
-                // Fallback injection for devices that don't support DOCUMENT_START_SCRIPT
-                view.evaluateJavascript(getSessionStorageBridgeScript(), null);
+            }
+
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                // Intercept the Firebase auth handler page and inject our sessionStorage bridge
+                // script directly into the HTML BEFORE Firebase reads sessionStorage.
+                //
+                // This is the only reliable approach across all Android/WebView versions:
+                //   - onPageStarted + evaluateJavascript runs in the OLD page context (wrong page).
+                //   - DOCUMENT_START_SCRIPT only works on WebView 102+ (Android 12+).
+                //   - shouldInterceptRequest lets us modify the actual HTML on ALL devices.
+                String url = request.getUrl().toString();
+                if (request.isForMainFrame() && url.contains("/__/auth/handler")) {
+                    return injectBridgeIntoAuthHandler(request);
+                }
+                return null;
             }
 
             @Override
@@ -241,7 +261,7 @@ public class MainActivity extends AppCompatActivity {
 
     // Inject sessionStorage persistence bridge BEFORE any page scripts run.
     // WebView isolates sessionStorage across redirect hops (unlike Chrome), which breaks
-    // Firebase signInWithRedirect. This script backs sessionStorage with localStorage
+    // Firebase signInWithRedirect. This script backs sessionStorage with SharedPreferences
     // so auth state survives the full redirect chain.
     private void injectSessionStorageBridge() {
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
@@ -250,55 +270,92 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // Fetch the Firebase auth handler HTML and inject our bridge at the top of <head>.
+    // This guarantees the bridge runs BEFORE Firebase JS reads sessionStorage,
+    // on every Android/WebView version.
+    private WebResourceResponse injectBridgeIntoAuthHandler(WebResourceRequest request) {
+        try {
+            HttpURLConnection conn = (HttpURLConnection) new URL(request.getUrl().toString()).openConnection();
+            conn.setRequestMethod(request.getMethod() != null ? request.getMethod() : "GET");
+            for (Map.Entry<String, String> h : request.getRequestHeaders().entrySet()) {
+                conn.setRequestProperty(h.getKey(), h.getValue());
+            }
+            conn.setRequestProperty("User-Agent",
+                    "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 " +
+                    "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36");
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(10000);
+
+            int status = conn.getResponseCode();
+            String contentType = conn.getContentType();
+            InputStream stream = conn.getInputStream();
+            String html = new Scanner(stream, "UTF-8").useDelimiter("\\A").next();
+
+            String setCookie = conn.getHeaderField("Set-Cookie");
+            if (setCookie != null) {
+                android.webkit.CookieManager.getInstance()
+                        .setCookie(request.getUrl().toString(), setCookie);
+            }
+
+            String inject = "<script>" + getSessionStorageBridgeScript() + "</script>";
+            if (html.contains("<head>")) {
+                html = html.replace("<head>", "<head>" + inject);
+            } else if (html.contains("<html")) {
+                html = html.replaceFirst("(<html[^>]*>)", "$1" + inject);
+            } else {
+                html = inject + html;
+            }
+
+            Map<String, String> headers = new HashMap<>();
+            headers.put("Access-Control-Allow-Origin", "*");
+            return new WebResourceResponse(
+                    contentType != null ? contentType.split(";")[0].trim() : "text/html",
+                    "UTF-8", status, "OK", headers,
+                    new ByteArrayInputStream(html.getBytes("UTF-8")));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private String getSessionStorageBridgeScript() {
-        // Backs sessionStorage with Android SharedPreferences so auth state survives
-        // cross-origin redirect hops (app domain ↔ firebaseapp.com).
+        // Backs sessionStorage with Android SharedPreferences (via __NativeBridge) so that
+        // auth state set by the app domain is visible to firebaseapp.com/__/auth/handler.
         //
-        // CRITICAL: keys are namespaced by origin so that the app domain and
-        // firebaseapp.com never overwrite each other's "firebase:pendingRedirect" keys.
-        // Without namespacing both origins write the same key to the same SharedPreferences
-        // slot — the last write wins and the Firebase auth handler reads a corrupt value.
+        // Keys are NOT namespaced by origin — Firebase deliberately writes
+        // firebase:pendingRedirect at the app domain and reads the SAME key at
+        // firebaseapp.com. Namespacing by origin breaks this cross-origin key sharing.
         return "(function() {" +
             "  try {" +
             "    var bridge = (typeof __NativeBridge !== 'undefined') ? __NativeBridge : null;" +
             "    if (!bridge) return;" +
-            "    var origin = (location.origin && location.origin !== 'null') ? location.origin" +
-            "                 : (location.protocol + '//' + location.host);" +
-            "    var ns = origin.replace(/[^a-zA-Z0-9]/g, '_') + '__';" +
             "    try {" +
             "      var all = JSON.parse(bridge.keys() || '[]');" +
             "      all.forEach(function(k) {" +
-            "        if (k.indexOf(ns) === 0) {" +
-            "          var realKey = k.slice(ns.length);" +
-            "          if (sessionStorage.getItem(realKey) === null) {" +
-            "            var v = bridge.getItem(k);" +
-            "            if (v !== null) sessionStorage.setItem(realKey, v);" +
-            "          }" +
+            "        if (sessionStorage.getItem(k) === null) {" +
+            "          var v = bridge.getItem(k);" +
+            "          if (v !== null) { try { sessionStorage.setItem(k, v); } catch(e) {} }" +
             "        }" +
             "      });" +
             "    } catch(e) {}" +
             "    var _set = sessionStorage.setItem.bind(sessionStorage);" +
             "    sessionStorage.setItem = function(k, v) {" +
-            "      try { bridge.setItem(ns + k, String(v)); } catch(e) {}" +
+            "      try { bridge.setItem(k, String(v)); } catch(e) {}" +
             "      return _set(k, v);" +
             "    };" +
             "    var _get = sessionStorage.getItem.bind(sessionStorage);" +
             "    sessionStorage.getItem = function(k) {" +
             "      var v = _get(k);" +
             "      if (v !== null) return v;" +
-            "      try { return bridge.getItem(ns + k); } catch(e) { return null; }" +
+            "      try { return bridge.getItem(k); } catch(e) { return null; }" +
             "    };" +
             "    var _rm = sessionStorage.removeItem.bind(sessionStorage);" +
             "    sessionStorage.removeItem = function(k) {" +
-            "      try { bridge.removeItem(ns + k); } catch(e) {}" +
+            "      try { bridge.removeItem(k); } catch(e) {}" +
             "      return _rm(k);" +
             "    };" +
             "    var _cl = sessionStorage.clear.bind(sessionStorage);" +
             "    sessionStorage.clear = function() {" +
-            "      try {" +
-            "        var all = JSON.parse(bridge.keys() || '[]');" +
-            "        all.forEach(function(k) { if (k.indexOf(ns) === 0) bridge.removeItem(k); });" +
-            "      } catch(e) {}" +
+            "      try { bridge.clear(); } catch(e) {}" +
             "      return _cl();" +
             "    };" +
             "  } catch(e) {}" +
